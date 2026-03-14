@@ -1,0 +1,61 @@
+:root {
+    --app-bg: radial-gradient(circle at 8% 12%, #eef4ff 0%, #f7f9fc 38%, #ffffff 100%);
+    --app-card-bg: rgba(255, 255, 255, 0.82);
+    --app-border: rgba(16, 24, 40, 0.08);
+    --app-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+    --app-shadow-hover: 0 14px 36px rgba(15, 23, 42, 0.14);
+}
+
+body.app-body {
+    background: var(--app-bg);
+    color: #0f172a;
+}
+
+.navbar.app-navbar {
+    background: linear-gradient(120deg, #0f172a, #172554 55%, #0b4b8c) !important;
+    box-shadow: 0 6px 24px rgba(2, 8, 23, 0.28);
+}
+
+.app-navbar .navbar-brand {
+    letter-spacing: 0.02rem;
+}
+
+.app-navbar .nav-link {
+    border-radius: 999px;
+    padding: 0.35rem 0.85rem !important;
+    margin-left: 0.35rem;
+    transition: all 0.2s ease;
+}
+
+.app-navbar .nav-link:hover,
+.app-navbar .nav-link:focus {
+    background: rgba(255, 255, 255, 0.18);
+}
+
+.card {
+    border: 1px solid var(--app-border);
+    background: var(--app-card-bg);
+    backdrop-filter: blur(6px);
+    box-shadow: var(--app-shadow);
+    border-radius: 1rem;
+}
+
+.card:hover {
+    box-shadow: var(--app-shadow-hover);
+}
+
+.btn {
+    border-radius: 0.72rem;
+    font-weight: 600;
+}
+
+.progress {
+    border-radius: 999px;
+    overflow: hidden;
+    height: 0.72rem;
+}
+
+.app-footer {
+    background: rgba(255, 255, 255, 0.78);
+    backdrop-filter: blur(6px);
+}

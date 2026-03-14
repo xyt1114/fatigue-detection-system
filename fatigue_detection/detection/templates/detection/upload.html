@@ -1,0 +1,107 @@
+{% extends "detection/base.html" %}
+{% load static %}
+{% block title %}疲劳驾驶检测 - 文件上传{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/upload.css' %}?v={{ STATIC_VERSION }}">
+{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-12 col-lg-5">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <h1 class="h4 mb-3 d-flex align-items-center gap-2">
+                    <i class="bi bi-folder2-open text-primary"></i>
+                    疲劳驾驶检测 - 文件上传
+                </h1>
+                <form id="uploadForm" method="post" enctype="multipart/form-data" novalidate>
+                    {% csrf_token %}
+                    <div id="dropZone" class="upload-dropzone rounded-3 p-4 text-center mb-3">
+                        <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
+                        <p class="mt-2 mb-1 fw-semibold">拖拽文件到此区域</p>
+                        <p class="text-muted small mb-3">或点击下方按钮选择图片/视频</p>
+                        <input id="fileInput" name="file" type="file" class="d-none" accept=".jpg,.jpeg,.png,.bmp,.mp4,.avi,.mov,.mkv">
+                        <button id="chooseBtn" type="button" class="btn btn-outline-primary btn-sm">选择文件</button>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between small text-muted mb-1">
+                            <span>上传与处理进度</span>
+                            <span id="progressText">0%</span>
+                        </div>
+                        <div class="progress">
+                            <div id="uploadProgress" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button id="uploadBtn" type="submit" class="btn btn-primary">开始检测</button>
+                        <button id="downloadBtn" type="button" class="btn btn-outline-secondary" disabled>下载报告</button>
+                    </div>
+                </form>
+                <div id="fileMeta" class="small text-muted mt-3"></div>
+                <div id="historyArea" class="mt-4">
+                    <h2 class="h6 mb-2">历史检测记录</h2>
+                    <ul id="historyList" class="list-group list-group-flush"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-lg-7">
+        <div class="card shadow-sm h-100">
+            <div class="card-body">
+                <div id="loadingArea" class="text-center py-5 d-none">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="text-muted mt-3 mb-0">正在处理，请稍候...</p>
+                </div>
+                <div id="previewArea" class="mb-3 d-none">
+                    <h2 class="h6 d-flex align-items-center gap-2"><i class="bi bi-image"></i>上传预览</h2>
+                    <img id="previewImage" class="img-fluid rounded border d-none" alt="预览图">
+                    <video id="previewVideo" class="w-100 rounded border d-none" controls></video>
+                </div>
+                <div id="resultArea" class="d-none">
+                    <h2 class="h5 mb-3 d-flex align-items-center gap-2"><i class="bi bi-graph-up-arrow text-primary"></i>检测结果</h2>
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <img id="resultImage" class="img-fluid rounded border" alt="处理后图片">
+                        </div>
+                        <div class="col-12">
+                            <div id="statusCard" class="result-card card border-0">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                                        <span class="badge rounded-pill px-3 py-2 d-inline-flex align-items-center gap-1" id="fatigueBadge"><i id="fatigueIcon" class="bi bi-emoji-smile"></i><span id="fatigueLabel">状态</span></span>
+                                        <strong id="scoreText">风险分值: 0</strong>
+                                    </div>
+                                    <div class="row small g-2">
+                                        <div class="col-6">EAR：<span id="earText">-</span></div>
+                                        <div class="col-6">MAR：<span id="marText">-</span></div>
+                                        <div class="col-12">头部姿态：<span id="poseText">-</span></div>
+                                        <div class="col-12">触发原因：<span id="reasonText">-</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div id="warningAlert" class="alert d-none mb-0 warning-animated" role="alert"></div>
+                        </div>
+                    </div>
+                </div>
+                <div id="emptyResult" class="text-center text-muted py-5">
+                    请选择文件后开始检测
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% if error %}
+<div class="alert alert-danger mt-3">{{ error }}</div>
+{% endif %}
+<div class="position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="uploadToast" class="toast align-items-center border-0 app-toast" role="alert">
+        <div class="d-flex">
+            <div id="toastBody" class="toast-body">消息</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/upload.js' %}?v={{ STATIC_VERSION }}"></script>
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "detection/base.html" %}
+{% load static %}
+{% block title %}疲劳驾驶检测 - 实时检测{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/realtime.css' %}?v={{ STATIC_VERSION }}">
+{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <div class="col-12 col-xl-8">
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
+                    <h1 class="h4 mb-0 d-flex align-items-center gap-2"><i class="bi bi-camera-video-fill text-primary"></i>疲劳驾驶检测 - 实时检测</h1>
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="cameraSelect" class="form-label mb-0 small text-muted">摄像头</label>
+                        <select id="cameraSelect" class="form-select form-select-sm camera-select"></select>
+                    </div>
+                </div>
+                <div class="video-stage ratio ratio-16x9 rounded overflow-hidden border">
+                    <video id="video" autoplay playsinline muted></video>
+                    <canvas id="overlayCanvas"></canvas>
+                </div>
+                <div id="cameraError" class="alert alert-danger mt-3 d-none mb-0"></div>
+                <div class="d-flex flex-wrap gap-2 mt-3">
+                    <button id="startBtn" class="btn btn-success btn-lg px-4">开始检测</button>
+                    <button id="stopBtn" class="btn btn-outline-secondary btn-lg px-4" disabled>停止检测</button>
+                    <button id="snapshotBtn" class="btn btn-primary btn-lg px-4" disabled>截图保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-xl-4">
+        <div class="card shadow-sm status-panel mb-3">
+            <div class="card-body">
+                <h2 class="h6 mb-3">实时状态</h2>
+                <div class="mb-3">
+                    <div class="small text-muted mb-1">当前疲劳等级</div>
+                    <div id="fatigueLevelText" class="fatigue-level level-alert d-inline-flex align-items-center gap-2"><i id="fatigueLevelIcon" class="bi bi-emoji-smile"></i><span id="fatigueLevelLabel">ALERT</span></div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1"><span>EAR</span><span id="earValue">0.0000</span></div>
+                    <div class="progress"><div id="earProgress" class="progress-bar bg-success" style="width: 0%"></div></div>
+                </div>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small mb-1"><span>MAR</span><span id="marValue">0.0000</span></div>
+                    <div class="progress"><div id="marProgress" class="progress-bar bg-warning" style="width: 0%"></div></div>
+                </div>
+                <div class="small">
+                    <div>Pitch: <span id="pitchValue">0.00</span></div>
+                    <div>Yaw: <span id="yawValue">0.00</span></div>
+                    <div>Roll: <span id="rollValue">0.00</span></div>
+                </div>
+            </div>
+        </div>
+        <div class="card shadow-sm warning-panel mb-3">
+            <div class="card-body">
+                <h2 class="h6 mb-2">预警提示</h2>
+                <div id="warningIndicator" class="warning-indicator level-normal d-inline-flex align-items-center gap-2"><i id="warningIcon" class="bi bi-shield-check"></i><span id="warningLabel">NORMAL</span></div>
+                <div class="mt-2 small text-muted">连续帧计数：<span id="frameCount">0</span></div>
+                <div class="mt-2 small text-muted">触发原因：<span id="reasonValue">无</span></div>
+            </div>
+        </div>
+        <div class="card shadow-sm">
+            <div class="card-body">
+                <button class="btn btn-outline-dark w-100 mb-3" type="button" data-bs-toggle="collapse" data-bs-target="#configCollapse">
+                    阈值配置面板
+                </button>
+                <div class="collapse" id="configCollapse">
+                    <div class="mb-2">
+                        <label class="form-label small mb-1" for="earThresholdInput">EAR阈值</label>
+                        <input id="earThresholdInput" type="number" step="0.01" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-1" for="marThresholdInput">MAR阈值</label>
+                        <input id="marThresholdInput" type="number" step="0.01" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small mb-1" for="pitchThresholdInput">Pitch阈值</label>
+                        <input id="pitchThresholdInput" type="number" step="1" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small mb-1" for="warningFrameCountInput">预警帧阈值</label>
+                        <input id="warningFrameCountInput" type="number" step="1" class="form-control form-control-sm">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small mb-1" for="emergencyFrameCountInput">紧急帧阈值</label>
+                        <input id="emergencyFrameCountInput" type="number" step="1" class="form-control form-control-sm">
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button id="refreshConfigBtn" type="button" class="btn btn-outline-secondary btn-sm">读取配置</button>
+                        <button id="saveConfigBtn" type="button" class="btn btn-primary btn-sm">保存配置</button>
+                        <button id="resetConfigBtn" type="button" class="btn btn-outline-danger btn-sm">恢复默认</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<canvas id="captureCanvas" class="d-none"></canvas>
+<div class="position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div id="realtimeToast" class="toast align-items-center border-0 app-toast" role="alert">
+        <div class="d-flex">
+            <div id="realtimeToastBody" class="toast-body">消息</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="{% static 'js/config.js' %}?v={{ STATIC_VERSION }}"></script>
+<script src="{% static 'js/realtime.js' %}?v={{ STATIC_VERSION }}"></script>
+{% endblock %}

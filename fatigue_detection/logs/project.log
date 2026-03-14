@@ -1,0 +1,90 @@
+2026-03-14 15:47:33,296 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 15:48:05,707 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 16:01:53,469 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 16:02:25,827 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 16:06:59,257 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 16:21:53,701 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:22:40,816 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:24:21,567 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:24:49,435 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:38:04,491 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:38:15,557 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:38:50,709 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:39:00,222 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:40:14,119 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:40:34,852 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:41:49,141 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:42:35,718 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:42:41,366 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:42:52,568 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 16:46:41,519 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 16:47:16,031 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 16:53:04,409 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 16:53:15,528 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 16:53:39,349 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 17:11:07,568 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\__init__.py changed, reloading.
+2026-03-14 17:11:08,949 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\fatigue_detection\__init__.py changed, reloading.
+2026-03-14 17:11:10,584 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:11:11,742 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:16:00,615 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:16:33,813 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 17:17:13,894 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 17:19:16,618 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\face_detector.py changed, reloading.
+2026-03-14 17:19:17,596 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\face_detector.py changed, reloading.
+2026-03-14 17:19:18,069 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\face_detector.py changed, reloading.
+2026-03-14 17:19:18,661 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:19:19,617 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:19:20,084 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:19:37,976 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\feature_extractor.py changed, reloading.
+2026-03-14 17:19:38,180 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\feature_extractor.py changed, reloading.
+2026-03-14 17:19:39,063 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\feature_extractor.py changed, reloading.
+2026-03-14 17:19:40,019 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:19:40,230 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:19:41,109 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:19:57,898 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\fatigue_classifier.py changed, reloading.
+2026-03-14 17:19:58,058 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\fatigue_classifier.py changed, reloading.
+2026-03-14 17:19:58,581 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\fatigue_classifier.py changed, reloading.
+2026-03-14 17:19:59,951 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:20:00,191 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:20:00,654 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:20:58,605 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\logger.py changed, reloading.
+2026-03-14 17:20:58,779 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\logger.py changed, reloading.
+2026-03-14 17:20:58,965 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\logger.py changed, reloading.
+2026-03-14 17:21:01,140 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:21:01,296 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:21:01,494 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:21:18,662 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\fatigue_detection\settings.py changed, reloading.
+2026-03-14 17:21:18,935 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\fatigue_detection\settings.py changed, reloading.
+2026-03-14 17:21:18,941 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\fatigue_detection\settings.py changed, reloading.
+2026-03-14 17:21:21,165 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:21:21,590 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:21:21,590 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:23:03,734 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\views.py changed, reloading.
+2026-03-14 17:23:03,783 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\views.py changed, reloading.
+2026-03-14 17:23:03,971 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\views.py changed, reloading.
+2026-03-14 17:23:06,403 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:23:06,445 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:23:06,606 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:23:25,729 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\views.py changed, reloading.
+2026-03-14 17:23:25,955 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\views.py changed, reloading.
+2026-03-14 17:23:25,996 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\views.py changed, reloading.
+2026-03-14 17:23:28,266 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:23:28,511 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:23:28,548 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:24:28,663 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 17:27:09,762 [WARNING] django.request: Bad Request: /api/update_config/
+2026-03-14 17:27:32,608 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:27:52,469 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 17:36:12,503 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\apps.py changed, reloading.
+2026-03-14 17:36:12,709 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\__init__.py changed, reloading.
+2026-03-14 17:36:13,604 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\models.py changed, reloading.
+2026-03-14 17:36:13,915 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\detection\utils\warning_system.py changed, reloading.
+2026-03-14 17:36:16,017 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:36:16,059 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:36:16,647 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:36:17,046 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:39:05,614 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 17:56:46,471 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-03-14 17:56:55,375 [WARNING] django.request: Not Found: /@vite/client
+2026-03-14 18:10:14,143 [WARNING] django.request: Bad Request: /api/detect_image/
+2026-03-14 18:10:23,104 [WARNING] django.request: Bad Request: /api/detect_image/
