@@ -56,3 +56,13 @@ def log_performance_event(endpoint, elapsed_ms, cache_hit=False):
         elapsed_ms,
         cache_hit,
     )
+
+
+def log_sampling_event(endpoint, frame_index, strategy, detected):
+    detection_logger.info(
+        "event=sampling endpoint=%s frame_index=%s strategy=%s detected=%s",
+        endpoint,
+        frame_index,
+        strategy,
+        detected,
+    )

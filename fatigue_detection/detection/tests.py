@@ -47,6 +47,17 @@ class TestFeatureExtractor(SimpleTestCase):
         mar = self.extractor.calculate_mar(mouth_points)
         self.assertAlmostEqual(mar, 0.5, places=6)
 
+    def test_mar_calculation_with_twenty_points(self):
+        mouth_points = np.zeros((20, 2), dtype=np.float32)
+        mouth_points[0] = [0.0, 0.0]
+        mouth_points[2] = [1.0, 1.0]
+        mouth_points[4] = [3.0, 1.0]
+        mouth_points[6] = [4.0, 0.0]
+        mouth_points[8] = [3.0, -1.0]
+        mouth_points[10] = [1.0, -1.0]
+        mar = self.extractor.calculate_mar(mouth_points)
+        self.assertAlmostEqual(mar, 0.5, places=6)
+
     def test_fatigue_classification(self):
         classifier = FatigueClassifier(ear_threshold=0.25, mar_threshold=0.6, pitch_threshold=30)
         alert = classifier.classify(ear=0.3, mar=0.3, head_pose={"pitch": 5})

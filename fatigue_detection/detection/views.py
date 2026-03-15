@@ -17,14 +17,14 @@ from rest_framework.decorators import api_view
 from .forms import ConfigForm, UploadForm
 from .models import DetectionLog, DetectionSession
 from .utils.config_manager import ConfigManager
-from .utils.logger import log_config_change, log_detection_event, log_performance_event
+from .utils.logger import log_config_change, log_detection_event, log_performance_event, log_sampling_event
 from .utils.model_loader import get_detector_instances, rebuild_runtime_instances
 
 IMAGE_EXT = {"jpg", "jpeg", "png", "bmp"}
 VIDEO_EXT = {"mp4", "avi", "mov", "mkv"}
 
 _CONFIG_MANAGER = ConfigManager()
-_FACE_DETECTOR, _FEATURE_EXTRACTOR, _CLASSIFIER, _WARNING_SYSTEM = get_detector_instances()
+_FACE_DETECTOR, _STATIC_FACE_DETECTOR, _FEATURE_EXTRACTOR, _CLASSIFIER, _WARNING_SYSTEM = get_detector_instances()
 _EXECUTOR = ThreadPoolExecutor(max_workers=4)
 
 
@@ -69,6 +69,23 @@ def _compress_image(image, quality=80, max_size=640):
     if not ok:
         return image
     return cv2.imdecode(compressed, cv2.IMREAD_COLOR)
+
+
+def _enhance_frame_for_face_detection(image):
+    if image is None or image.ndim != 3:
+        return image
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l_channel = clahe.apply(l_channel)
+    enhanced = cv2.merge((l_channel, a_channel, b_channel))
+    enhanced = cv2.cvtColor(enhanced, cv2.COLOR_LAB2BGR)
+    mean_val = float(np.mean(cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)))
+    if mean_val < 90:
+        gamma = 1.25
+        lut = np.array([((i / 255.0) ** (1.0 / gamma)) * 255 for i in range(256)], dtype="uint8")
+        enhanced = cv2.LUT(enhanced, lut)
+    return enhanced
 
 
 def _frame_hash(frame):
@@ -132,54 +149,174 @@ def _draw_landmarks(frame, landmarks):
     return output
 
 
-def _detect_on_frame(frame, include_annotation=True):
-    face_result = _FACE_DETECTOR.detect(frame)
+def _detect_with_detector(frame, detector, include_annotation=True):
+    face_result = detector.detect(frame)
     if not face_result:
         return None
-    landmarks = _FACE_DETECTOR.get_landmarks(face_result)
+    landmarks = detector.get_landmarks(face_result)
     if not landmarks:
         return None
-    features = _FEATURE_EXTRACTOR.extract_frame_features(landmarks, face_result["image_size"])
-    classify_result = _CLASSIFIER.classify(
-        ear=features["ear"], mar=features["mar"], head_pose=features["head_pose"]
-    )
-    annotated = _draw_landmarks(frame, landmarks) if include_annotation else None
-    return {
-        "features": features,
-        "classify": classify_result,
-        "annotated": annotated,
-    }
+    try:
+        features = _FEATURE_EXTRACTOR.extract_frame_features(landmarks, face_result["image_size"])
+        classify_result = _CLASSIFIER.classify(
+            ear=features["ear"], mar=features["mar"], head_pose=features["head_pose"]
+        )
+        annotated = _draw_landmarks(frame, landmarks) if include_annotation else None
+        return {
+            "features": features,
+            "classify": classify_result,
+            "annotated": annotated,
+        }
+    except Exception:
+        return None
 
 
-def _detect_with_cache(frame, include_annotation=True, cache_ttl=300):
+def _detect_on_frame(frame, include_annotation=True, retry_static=True):
+    detect_result = _detect_with_detector(frame, _FACE_DETECTOR, include_annotation=include_annotation)
+    if detect_result:
+        return detect_result
+    if retry_static:
+        return _detect_with_detector(frame, _STATIC_FACE_DETECTOR, include_annotation=include_annotation)
+    return None
+
+
+def _detect_with_cache(frame, include_annotation=True, cache_ttl=300, retry_static=True):
     config_signature = str(sorted(_CONFIG_MANAGER.get_config().items()))
     frame_signature = _frame_hash(frame)
-    cache_key = f"detect:frame:{frame_signature}:{hash(config_signature)}:{int(include_annotation)}"
+    cache_key = (
+        f"detect:frame:{frame_signature}:{hash(config_signature)}:{int(include_annotation)}:{int(retry_static)}"
+    )
     cached_result = cache.get(cache_key)
     if cached_result is not None:
         return cached_result, True
-    detect_result = _detect_on_frame(frame, include_annotation=include_annotation)
-    cache.set(cache_key, detect_result, timeout=cache_ttl)
+    detect_result = _detect_on_frame(
+        frame,
+        include_annotation=include_annotation,
+        retry_static=retry_static,
+    )
+    if detect_result is not None:
+        cache.set(cache_key, detect_result, timeout=cache_ttl)
     return detect_result, False
 
 
-def _extract_frame_from_upload(uploaded_file):
+def _sample_video_frames(video_path, sample_count=16):
+    frames = []
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return frames
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    if total_frames > 1:
+        anchors = np.linspace(0.05, 0.95, num=max(4, sample_count))
+        indices = sorted(
+            {
+                min(max(0, int(total_frames * anchor)), max(0, total_frames - 1))
+                for anchor in anchors
+            }
+        )
+        for frame_idx in indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+            ok, frame = cap.read()
+            if ok and frame is not None:
+                frames.append(frame)
+    else:
+        sampled = 0
+        step = 2
+        index = 0
+        while sampled < sample_count:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            if index % step == 0:
+                frames.append(frame)
+                sampled += 1
+            index += 1
+    cap.release()
+    return frames
+
+
+def _extract_frames_from_upload(uploaded_file, sample_count=16):
     suffix = uploaded_file.name.lower().split(".")[-1] if "." in uploaded_file.name else ""
     if suffix in IMAGE_EXT:
         data = uploaded_file.read()
         arr = np.frombuffer(data, dtype=np.uint8)
-        return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return [], suffix
+        return [frame], suffix
     if suffix in VIDEO_EXT:
-        with tempfile.NamedTemporaryFile(suffix=f".{suffix}", delete=True) as temp_file:
+        import os
+        temp_file = tempfile.NamedTemporaryFile(suffix=f".{suffix}", delete=False)
+        temp_path = temp_file.name
+        try:
             for chunk in uploaded_file.chunks():
                 temp_file.write(chunk)
-            temp_file.flush()
-            cap = cv2.VideoCapture(temp_file.name)
-            ok, frame = cap.read()
-            cap.release()
-            if ok:
-                return frame
-    return None
+            temp_file.close()
+            sampled_frames = _sample_video_frames(temp_path, sample_count=sample_count)
+            if sampled_frames:
+                debug_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
+                os.makedirs(debug_dir, exist_ok=True)
+                cv2.imwrite(os.path.join(debug_dir, "debug_first_frame.jpg"), sampled_frames[0])
+            return sampled_frames, suffix
+        finally:
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+    return [], suffix
+
+
+def _extract_frame_from_upload(uploaded_file):
+    frames, _ = _extract_frames_from_upload(uploaded_file, sample_count=1)
+    return frames[0] if frames else None
+
+
+def _extract_candidate_frames(uploaded_file, sample_count=16):
+    suffix = uploaded_file.name.lower().split(".")[-1] if "." in uploaded_file.name else ""
+    if suffix in IMAGE_EXT:
+        frame = _extract_frame_from_upload(uploaded_file)
+        return ([frame] if frame is not None else []), suffix
+    return _extract_frames_from_upload(uploaded_file, sample_count=sample_count)
+
+
+def _detect_from_candidates(
+    frames,
+    include_annotation=True,
+    cache_ttl=300,
+    retry_static=True,
+    compress_max_size=720,
+    compress_quality=82,
+    endpoint="api_detect_image",
+):
+    cache_hit_any = False
+    for idx, frame in enumerate(frames):
+        if frame is None:
+            continue
+        detect_result, cache_hit = _detect_with_cache(
+            frame,
+            include_annotation=include_annotation,
+            cache_ttl=cache_ttl,
+            retry_static=retry_static,
+        )
+        log_sampling_event(endpoint, idx, "raw", bool(detect_result))
+        cache_hit_any = cache_hit_any or cache_hit
+        if detect_result:
+            return detect_result, cache_hit_any
+        
+        # 移除额外的_compress_image步骤，仅使用CLAHE增强，防止因resize导致人脸太小
+        enhanced = _enhance_frame_for_face_detection(frame)
+        detect_result, cache_hit = _detect_with_cache(
+            enhanced,
+            include_annotation=include_annotation,
+            cache_ttl=cache_ttl,
+            retry_static=retry_static,
+        )
+        log_sampling_event(endpoint, idx, "enhanced", bool(detect_result))
+        cache_hit_any = cache_hit_any or cache_hit
+        if detect_result:
+            return detect_result, cache_hit_any
+            
+    return None, cache_hit_any
 
 
 def index(request):
@@ -191,14 +328,24 @@ def upload_detect(request):
     context = {"form": form}
     if request.method == "POST" and form.is_valid():
         upload = form.cleaned_data["file"]
-        frame = _extract_frame_from_upload(upload)
-        if frame is None:
+        frames, suffix = _extract_candidate_frames(upload, sample_count=16)
+        if not frames:
             context["error"] = "无法解析上传文件，请检查文件格式是否正确"
             return render(request, "detection/upload.html", context)
-        frame = _compress_image(frame, quality=82, max_size=720)
-        detect_result, _ = _detect_with_cache(frame, include_annotation=True, cache_ttl=300)
+        detect_result, _ = _detect_from_candidates(
+            frames,
+            include_annotation=True,
+            cache_ttl=300,
+            retry_static=True,
+            compress_max_size=960,
+            compress_quality=84,
+            endpoint="upload_detect",
+        )
         if not detect_result:
-            context["error"] = "未检测到人脸"
+            if suffix in VIDEO_EXT:
+                context["error"] = "视频采样帧均未检测到人脸，请确保人脸清晰可见并位于画面中"
+            else:
+                context["error"] = "未检测到人脸，请使用正脸且光照充足的图片"
             return render(request, "detection/upload.html", context)
         features = detect_result["features"]
         classify = detect_result["classify"]
@@ -233,26 +380,32 @@ def api_detect_image(request):
         return JsonResponse({"status": "error", "message": "图片大小超过10MB"}, status=400)
     if suffix in VIDEO_EXT and upload.size > video_limit:
         return JsonResponse({"status": "error", "message": "视频大小超过100MB"}, status=400)
-    frame = _extract_frame_from_upload(upload)
-    if frame is None:
+    frames, suffix = _extract_candidate_frames(upload, sample_count=16)
+    if not frames:
         return JsonResponse({"status": "error", "message": "无法解析上传文件"}, status=400)
-    frame = _compress_image(frame, quality=80, max_size=640)
-    config_signature = str(sorted(_CONFIG_MANAGER.get_config().items()))
-    frame_signature = _frame_hash(frame)
-    response_cache_key = f"detect:image:response:{frame_signature}:{hash(config_signature)}"
-    cached_response = cache.get(response_cache_key)
-    if cached_response is not None:
-        elapsed = (time.perf_counter() - started_at) * 1000
-        log_performance_event("api_detect_image", elapsed, cache_hit=True)
-        return JsonResponse(cached_response)
-    detect_result, cache_hit = _EXECUTOR.submit(
-        _detect_with_cache,
-        frame,
-        True,
-        300,
-    ).result()
+    try:
+        detect_result, cache_hit = _EXECUTOR.submit(
+            _detect_from_candidates,
+            frames,
+            True,
+            300,
+            True,
+            960,
+            84,
+            "api_detect_image",
+        ).result()
+    except Exception:
+        return JsonResponse(
+            {"status": "error", "message": "检测过程异常，请重试或更换素材"},
+            status=400,
+        )
     if not detect_result:
-        return JsonResponse({"status": "error", "message": "未检测到人脸"}, status=400)
+        message = "未检测到人脸"
+        if suffix in VIDEO_EXT:
+            message = "视频采样帧均未检测到人脸，请确保人脸清晰可见并位于画面中"
+        elapsed = (time.perf_counter() - started_at) * 1000
+        log_performance_event("api_detect_image", elapsed, cache_hit=cache_hit)
+        return JsonResponse({"status": "error", "message": message}, status=400)
     features = detect_result["features"]
     classify = detect_result["classify"]
     log_detection_event(user_id, classify["status"], "normal")
@@ -266,7 +419,6 @@ def api_detect_image(request):
         "score": int(classify["score"]),
         "reasons": classify["reasons"],
     }
-    cache.set(response_cache_key, response_payload, timeout=300)
     elapsed = (time.perf_counter() - started_at) * 1000
     log_performance_event("api_detect_image", elapsed, cache_hit=cache_hit)
     return JsonResponse(response_payload)
@@ -297,12 +449,19 @@ def api_detect_frame(request):
     if frame is None:
         return JsonResponse({"status": "error", "message": "frame参数无效，需base64图像"}, status=400)
     frame = _compress_image(frame, quality=75, max_size=640)
-    detect_result, cache_hit = _EXECUTOR.submit(
-        _detect_with_cache,
-        frame,
-        False,
-        15,
-    ).result()
+    try:
+        detect_result, cache_hit = _EXECUTOR.submit(
+            _detect_with_cache,
+            frame,
+            False,
+            15,
+            False,
+        ).result()
+    except Exception:
+        return JsonResponse(
+            {"status": "error", "message": "检测过程异常，请重试"},
+            status=400,
+        )
     if not detect_result:
         warning = _WARNING_SYSTEM.update("alert")
         try:

@@ -15,18 +15,21 @@ class FeatureExtractor:
 
         关键点顺序遵循 EAR/MAR 公式中的 p1..p6 约定。
         """
-        self.left_eye_indices = [33, 160, 158, 133, 153, 144]
-        self.right_eye_indices = [362, 385, 387, 263, 373, 380]
-        self.mouth_indices = [78, 82, 13, 308, 14, 312]
-        self.pose_indices = [1, 152, 33, 263, 61, 291]
+        # 适应 68 点 LBF 模型
+        self.left_eye_indices = [36, 37, 38, 39, 40, 41]
+        self.right_eye_indices = [42, 43, 44, 45, 46, 47]
+        # 嘴部 MAR 计算选取关键点 (68点模型): 48, 50, 52, 54, 56, 58
+        self.mouth_indices = [48, 50, 52, 54, 56, 58]
+        # 头部姿态 2D 点 (68点模型): 鼻尖(30), 颏(8), 左眼左角(36), 右眼右角(45), 左嘴角(48), 右嘴角(54)
+        self.pose_indices = [30, 8, 36, 45, 48, 54]
         self.model_points_3d = np.array(
             [
-                (0.0, 0.0, 0.0),
-                (0.0, -63.6, -12.5),
-                (-43.3, 32.7, -26.0),
-                (43.3, 32.7, -26.0),
-                (-28.9, -28.9, -24.1),
-                (28.9, -28.9, -24.1),
+                (0.0, 0.0, 0.0),             # 鼻尖
+                (0.0, -330.0, -65.0),        # 颏
+                (-225.0, 170.0, -135.0),     # 左眼左角
+                (225.0, 170.0, -135.0),      # 右眼右角
+                (-150.0, -150.0, -125.0),    # 左嘴角
+                (150.0, -150.0, -125.0),     # 右嘴角
             ],
             dtype=np.float32,
         )
@@ -85,7 +88,13 @@ class FeatureExtractor:
         Returns:
             MAR 值，值越大通常表示张嘴幅度越大。
         """
-        return self._ratio_from_six_points(np.asarray(mouth_landmarks, dtype=np.float32))
+        points = np.asarray(mouth_landmarks, dtype=np.float32)
+        if points.shape == (6, 2):
+            return self._ratio_from_six_points(points)
+        if points.shape == (20, 2):
+            mapped = points[[0, 2, 4, 6, 8, 10]]
+            return self._ratio_from_six_points(mapped)
+        return 0.0
 
     def calculate_head_pose(self, landmarks, image_size):
         """
@@ -151,10 +160,13 @@ class FeatureExtractor:
         Returns:
             包含 ear/mar/head_pose 的特征字典。
         """
-        ear = self.calculate_ear({"left_eye": landmarks["left_eye"], "right_eye": landmarks["right_eye"]})
-        mar = self.calculate_mar(landmarks["mouth"])
-        head_pose = self.calculate_head_pose(landmarks, image_size)
-        return {"ear": ear, "mar": mar, "head_pose": head_pose}
+        try:
+            ear = self.calculate_ear({"left_eye": landmarks["left_eye"], "right_eye": landmarks["right_eye"]})
+            mar = self.calculate_mar(landmarks["mouth"])
+            head_pose = self.calculate_head_pose(landmarks, image_size)
+            return {"ear": ear, "mar": mar, "head_pose": head_pose}
+        except Exception:
+            return {"ear": 0.0, "mar": 0.0, "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0}}
 
     def extract_sequence_features(self, landmarks_sequence, image_size):
         """
