@@ -61,6 +61,15 @@
                     <div class="row g-3">
                         <div class="col-12">
                             <img id="resultImage" class="img-fluid rounded border" alt="处理后图片">
+                            <video id="resultVideo" class="w-100 rounded border d-none" controls></video>
+                        </div>
+                        <div id="curveArea" class="col-12 d-none">
+                            <div class="card border-0 curve-card">
+                                <div class="card-body">
+                                    <div class="small text-muted mb-2" id="curveMeta">疲劳曲线（时间轴）</div>
+                                    <canvas id="curveCanvas" height="220"></canvas>
+                                </div>
+                            </div>
                         </div>
                         <div class="col-12">
                             <div id="statusCard" class="result-card card border-0">

@@ -1,12 +1,18 @@
 import base64
 import hashlib
 import json
+import logging
+import os
+import shutil
+import subprocess
 import tempfile
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import cv2
 import numpy as np
+from django.conf import settings
 from django.core.cache import cache
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
@@ -26,6 +32,7 @@ VIDEO_EXT = {"mp4", "avi", "mov", "mkv"}
 _CONFIG_MANAGER = ConfigManager()
 _FACE_DETECTOR, _STATIC_FACE_DETECTOR, _FEATURE_EXTRACTOR, _CLASSIFIER, _WARNING_SYSTEM = get_detector_instances()
 _EXECUTOR = ThreadPoolExecutor(max_workers=4)
+_LOGGER = logging.getLogger(__name__)
 
 
 def _rebuild_models():
@@ -319,6 +326,258 @@ def _detect_from_candidates(
     return None, cache_hit_any
 
 
+def _warning_from_level(level):
+    if level == "severe_fatigue":
+        return "emergency"
+    if level == "fatigue":
+        return "warning"
+    return "normal"
+
+
+def _build_fatigue_segments(times, levels):
+    segments = []
+    start_idx = None
+    current_level = None
+    for idx, level in enumerate(levels):
+        if level in {"fatigue", "severe_fatigue"}:
+            if current_level is None:
+                current_level = level
+                start_idx = idx
+            elif current_level != level:
+                segments.append(
+                    {
+                        "start": round(float(times[start_idx]), 3),
+                        "end": round(float(times[idx - 1]), 3),
+                        "level": current_level,
+                    }
+                )
+                current_level = level
+                start_idx = idx
+        else:
+            if current_level is not None:
+                segments.append(
+                    {
+                        "start": round(float(times[start_idx]), 3),
+                        "end": round(float(times[idx - 1]), 3),
+                        "level": current_level,
+                    }
+                )
+                current_level = None
+                start_idx = None
+    if current_level is not None and start_idx is not None and times:
+        segments.append(
+            {
+                "start": round(float(times[start_idx]), 3),
+                "end": round(float(times[-1]), 3),
+                "level": current_level,
+            }
+        )
+    return segments
+
+
+def _max_level(levels):
+    rank = {"alert": 0, "fatigue": 1, "severe_fatigue": 2}
+    best = "alert"
+    for level in levels:
+        if rank.get(level, 0) > rank.get(best, 0):
+            best = level
+    return best
+
+
+def _draw_video_overlay(frame, classify_result, features, timestamp_sec):
+    level = classify_result.get("status", "alert")
+    score = int(classify_result.get("score", 0))
+    color = (46, 204, 113)
+    if level == "fatigue":
+        color = (39, 181, 255)
+    elif level == "severe_fatigue":
+        color = (68, 68, 255)
+    cv2.rectangle(frame, (8, 8), (540, 110), (20, 20, 20), -1)
+    cv2.rectangle(frame, (8, 8), (540, 110), color, 2)
+    pose = features.get("head_pose") or {}
+    text1 = f"t={timestamp_sec:.2f}s  level={level}  score={score}"
+    text2 = f"EAR={features.get('ear', 0.0):.4f}  MAR={features.get('mar', 0.0):.4f}  pitch={pose.get('pitch', 0.0):.2f}"
+    cv2.putText(frame, text1, (18, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (245, 245, 245), 2, cv2.LINE_AA)
+    cv2.putText(frame, text2, (18, 82), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (245, 245, 245), 2, cv2.LINE_AA)
+
+
+def _validate_video_file(path):
+    if not path.exists() or path.stat().st_size <= 0:
+        return False
+    cap = cv2.VideoCapture(str(path))
+    if not cap.isOpened():
+        return False
+    ok, frame = cap.read()
+    cap.release()
+    return bool(ok and frame is not None and frame.size > 0)
+
+
+def _resolve_ffmpeg_bin():
+    configured = getattr(settings, "FFMPEG_BIN", "")
+    if configured:
+        configured_path = str(configured)
+        if os.path.isfile(configured_path):
+            return configured_path
+        resolved = shutil.which(configured_path)
+        if resolved:
+            return resolved
+    for candidate in ["ffmpeg", r"C:\ffmpeg\bin\ffmpeg.exe", r"C:\Program Files\ffmpeg\bin\ffmpeg.exe"]:
+        if os.path.isfile(candidate):
+            return candidate
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _transcode_video_for_web(source_path, target_path):
+    ffmpeg_bin = _resolve_ffmpeg_bin()
+    if not ffmpeg_bin:
+        return False, "未找到ffmpeg可执行文件"
+    command = [
+        ffmpeg_bin,
+        "-y",
+        "-i",
+        str(source_path),
+        "-c:v",
+        "libx264",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-an",
+        str(target_path),
+    ]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except Exception as exc:
+        return False, f"调用ffmpeg失败[{ffmpeg_bin}]: {exc}"
+    if result.returncode != 0:
+        stderr_tail = (result.stderr or "").strip()[-600:]
+        return False, f"ffmpeg转码失败[{ffmpeg_bin}](code={result.returncode}): {stderr_tail}"
+    if not _validate_video_file(target_path):
+        return False, "ffmpeg转码后视频校验失败"
+    return True, ""
+
+
+def _process_video_to_artifacts(video_path):
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None, "无法解析上传视频"
+    fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+    if fps <= 0:
+        fps = 25.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    if width <= 0 or height <= 0:
+        cap.release()
+        return None, "视频分辨率异常"
+
+    output_dir = settings.MEDIA_ROOT / "processed"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_name = f"processed_{int(time.time())}_{uuid.uuid4().hex[:8]}.mp4"
+    output_path = output_dir / output_name
+    raw_path = output_dir / f"raw_{uuid.uuid4().hex[:8]}.mp4"
+
+    writer = cv2.VideoWriter(
+        str(raw_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height),
+    )
+    if not writer.isOpened():
+        cap.release()
+        return None, "处理视频写入失败"
+
+    times = []
+    ear_series = []
+    mar_series = []
+    score_series = []
+    level_series = []
+    frame_index = 0
+
+    while True:
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            break
+        detect_result = _detect_on_frame(frame, include_annotation=True, retry_static=True)
+        if detect_result:
+            features = detect_result["features"]
+            classify = detect_result["classify"]
+            annotated = detect_result.get("annotated")
+            if annotated is None:
+                annotated = frame.copy()
+        else:
+            features = {"ear": 0.0, "mar": 0.0, "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0}}
+            classify = {"status": "alert", "score": 0, "reasons": ["no_face"]}
+            annotated = frame.copy()
+
+        ts = frame_index / fps
+        _draw_video_overlay(annotated, classify, features, ts)
+        writer.write(annotated)
+
+        times.append(round(float(ts), 3))
+        ear_series.append(round(float(features.get("ear", 0.0)), 6))
+        mar_series.append(round(float(features.get("mar", 0.0)), 6))
+        score_series.append(int(classify.get("score", 0)))
+        level_series.append(classify.get("status", "alert"))
+        frame_index += 1
+
+    cap.release()
+    writer.release()
+
+    if frame_index == 0:
+        try:
+            raw_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return None, "视频没有可处理帧"
+
+    final_ready, transcode_error = _transcode_video_for_web(raw_path, output_path)
+    try:
+        raw_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    if not final_ready:
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        _LOGGER.error("视频转码失败: %s", transcode_error)
+        return None, "视频转码失败，请安装ffmpeg并重试"
+
+    if not _validate_video_file(output_path):
+        try:
+            output_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        return None, "处理后视频不可播放，请重试"
+
+    segments = _build_fatigue_segments(times, level_series)
+    max_level = _max_level(level_series)
+    duration = round(frame_index / fps, 3)
+
+    return {
+        "mode": "video",
+        "processed_video_url": f"/media/processed/{output_path.name}",
+        "curves": {
+            "times": times,
+            "ear": ear_series,
+            "mar": mar_series,
+            "score": score_series,
+            "levels": level_series,
+        },
+        "summary": {
+            "fps": round(fps, 3),
+            "frame_count": frame_index,
+            "duration_sec": duration,
+            "max_score": int(max(score_series) if score_series else 0),
+            "max_level": max_level,
+            "fatigue_segments": segments,
+        },
+    }, None
+
+
 def index(request):
     return redirect("detection:upload_detect")
 
@@ -380,6 +639,49 @@ def api_detect_image(request):
         return JsonResponse({"status": "error", "message": "图片大小超过10MB"}, status=400)
     if suffix in VIDEO_EXT and upload.size > video_limit:
         return JsonResponse({"status": "error", "message": "视频大小超过100MB"}, status=400)
+    if suffix in VIDEO_EXT:
+        temp_file = tempfile.NamedTemporaryFile(suffix=f".{suffix}", delete=False)
+        temp_path = temp_file.name
+        try:
+            for chunk in upload.chunks():
+                temp_file.write(chunk)
+            temp_file.close()
+            payload, error_message = _EXECUTOR.submit(_process_video_to_artifacts, temp_path).result()
+        except Exception:
+            payload, error_message = None, "检测过程异常，请重试或更换素材"
+        finally:
+            try:
+                temp_file.close()
+            except Exception:
+                pass
+            try:
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+        if payload is None:
+            return JsonResponse({"status": "error", "message": error_message or "视频处理失败"}, status=400)
+
+        max_level = payload["summary"].get("max_level", "alert")
+        response_payload = {
+            "status": "success",
+            "mode": "video",
+            "fatigue_level": max_level,
+            "warning_level": _warning_from_level(max_level),
+            "score": int(payload["summary"].get("max_score", 0)),
+            "ear": float(np.mean(payload["curves"].get("ear") or [0.0])),
+            "mar": float(np.mean(payload["curves"].get("mar") or [0.0])),
+            "head_pose": {"pitch": 0.0, "yaw": 0.0, "roll": 0.0},
+            "reasons": ["video_timeline"],
+            "processed_video_url": payload["processed_video_url"],
+            "curves": payload["curves"],
+            "summary": payload["summary"],
+        }
+        elapsed = (time.perf_counter() - started_at) * 1000
+        log_detection_event(user_id, max_level, response_payload["warning_level"])
+        log_performance_event("api_detect_image", elapsed, cache_hit=False)
+        return JsonResponse(response_payload)
+
     frames, suffix = _extract_candidate_frames(upload, sample_count=16)
     if not frames:
         return JsonResponse({"status": "error", "message": "无法解析上传文件"}, status=400)
@@ -400,17 +702,15 @@ def api_detect_image(request):
             status=400,
         )
     if not detect_result:
-        message = "未检测到人脸"
-        if suffix in VIDEO_EXT:
-            message = "视频采样帧均未检测到人脸，请确保人脸清晰可见并位于画面中"
         elapsed = (time.perf_counter() - started_at) * 1000
         log_performance_event("api_detect_image", elapsed, cache_hit=cache_hit)
-        return JsonResponse({"status": "error", "message": message}, status=400)
+        return JsonResponse({"status": "error", "message": "未检测到人脸"}, status=400)
     features = detect_result["features"]
     classify = detect_result["classify"]
     log_detection_event(user_id, classify["status"], "normal")
     response_payload = {
         "status": "success",
+        "mode": "image",
         "fatigue_level": classify["status"],
         "ear": float(features["ear"]),
         "mar": float(features["mar"]),

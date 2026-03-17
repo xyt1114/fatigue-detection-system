@@ -185,6 +185,26 @@ class TestAPI(TestCase):
             self.assertEqual(data["status"], "success")
             self.assertIn("fatigue_level", data)
 
+    @patch("detection.views._process_video_to_artifacts")
+    def test_api_detect_image_video_success(self, mock_video_process):
+        mock_video_process.return_value = (
+            {
+                "mode": "video",
+                "processed_video_url": "/media/processed/demo.mp4",
+                "curves": {"times": [0.0, 0.1], "ear": [0.2, 0.22], "mar": [0.4, 0.5], "score": [20, 55], "levels": ["alert", "fatigue"]},
+                "summary": {"fps": 10.0, "frame_count": 2, "duration_sec": 0.2, "max_score": 55, "max_level": "fatigue", "fatigue_segments": [{"start": 0.1, "end": 0.1, "level": "fatigue"}]},
+            },
+            None,
+        )
+        file_obj = SimpleUploadedFile("a.mp4", b"fake-video", content_type="video/mp4")
+        resp = self.client.post(reverse("detection:api_detect_image"), {"file": file_obj})
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["mode"], "video")
+        self.assertIn("processed_video_url", payload)
+        self.assertIn("curves", payload)
+
     @patch("detection.views._decode_base64_image")
     @patch("detection.views._detect_on_frame")
     def test_api_detect_frame_success(self, mock_detect, mock_decode):

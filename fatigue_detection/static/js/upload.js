@@ -18,6 +18,10 @@ const previewImage = document.getElementById("previewImage")
 const previewVideo = document.getElementById("previewVideo")
 const resultArea = document.getElementById("resultArea")
 const resultImage = document.getElementById("resultImage")
+const resultVideo = document.getElementById("resultVideo")
+const curveArea = document.getElementById("curveArea")
+const curveCanvas = document.getElementById("curveCanvas")
+const curveMeta = document.getElementById("curveMeta")
 const statusCard = document.getElementById("statusCard")
 const fatigueBadge = document.getElementById("fatigueBadge")
 const scoreText = document.getElementById("scoreText")
@@ -150,12 +154,133 @@ function inferWarning(fatigueLevel) {
     return "normal"
 }
 
+function drawCurve(curves, summary) {
+    if (!curveCanvas) {
+        return
+    }
+    const ctx = curveCanvas.getContext("2d")
+    const width = curveCanvas.clientWidth || 860
+    const height = curveCanvas.height || 220
+    curveCanvas.width = width
+    ctx.clearRect(0, 0, width, height)
+    const times = (curves && curves.times) || []
+    const scoreRaw = (curves && curves.score) || []
+    const earRaw = (curves && curves.ear) || []
+    const marRaw = (curves && curves.mar) || []
+    if (!times.length) {
+        ctx.fillStyle = "#6b7280"
+        ctx.font = "14px sans-serif"
+        ctx.fillText("暂无曲线数据", 16, 28)
+        return
+    }
+
+    const smooth = (values, windowSize) => {
+        if (!values.length) return []
+        const half = Math.floor(windowSize / 2)
+        return values.map((_, idx) => {
+            let sum = 0
+            let count = 0
+            for (let i = Math.max(0, idx - half); i <= Math.min(values.length - 1, idx + half); i += 1) {
+                sum += Number(values[i] || 0)
+                count += 1
+            }
+            return count ? sum / count : 0
+        })
+    }
+
+    const maxPoints = 240
+    const step = Math.max(1, Math.ceil(times.length / maxPoints))
+    const sampledTimes = []
+    const sampledScoreRaw = []
+    const sampledEarRaw = []
+    const sampledMarRaw = []
+    for (let i = 0; i < times.length; i += step) {
+        sampledTimes.push(times[i])
+        sampledScoreRaw.push(scoreRaw[i] || 0)
+        sampledEarRaw.push(earRaw[i] || 0)
+        sampledMarRaw.push(marRaw[i] || 0)
+    }
+
+    const score = smooth(sampledScoreRaw, 7).map(v => Math.max(0, Math.min(100, v)))
+    const ear = smooth(sampledEarRaw, 7).map(v => Math.max(0, Math.min(1, v)))
+    const mar = smooth(sampledMarRaw, 7).map(v => Math.max(0, Math.min(1, v)))
+
+    const x0 = 42
+    const y0 = 12
+    const chartW = width - 60
+    const chartH = height - 40
+    const maxTime = Math.max(sampledTimes[sampledTimes.length - 1], 1)
+    const toX = t => x0 + (t / maxTime) * chartW
+    const toY = v => y0 + chartH - (Math.max(0, Math.min(100, v)) / 100) * chartH
+
+    ;[0, 25, 50, 75, 100].forEach(tick => {
+        const y = toY(tick)
+        ctx.strokeStyle = tick === 0 ? "#cbd5e1" : "#e5e7eb"
+        ctx.lineWidth = 1
+        ctx.beginPath()
+        ctx.moveTo(x0, y)
+        ctx.lineTo(x0 + chartW, y)
+        ctx.stroke()
+    })
+    ctx.strokeStyle = "#cbd5e1"
+    ctx.strokeRect(x0, y0, chartW, chartH)
+
+    ;((summary && summary.fatigue_segments) || []).forEach(seg => {
+        const left = toX(seg.start)
+        const right = toX(seg.end)
+        ctx.fillStyle = seg.level === "severe_fatigue" ? "rgba(239,68,68,0.16)" : "rgba(245,158,11,0.16)"
+        ctx.fillRect(left, y0, Math.max(2, right - left), chartH)
+    })
+    const drawLine = (values, color) => {
+        if (!values.length) return
+        ctx.beginPath()
+        values.forEach((val, idx) => {
+            const x = toX(sampledTimes[idx] || 0)
+            const y = toY(val)
+            if (idx === 0) ctx.moveTo(x, y)
+            else ctx.lineTo(x, y)
+        })
+        ctx.strokeStyle = color
+        ctx.lineWidth = color === "#ef4444" ? 2.6 : 1.6
+        ctx.stroke()
+    }
+    drawLine(score, "#ef4444")
+    drawLine(ear.map(v => v * 100), "#2563eb")
+    drawLine(mar.map(v => v * 100), "#22c55e")
+    ctx.fillStyle = "#374151"
+    ctx.font = "12px sans-serif"
+    ctx.fillText("红:Score(0-100)  蓝:EARx100  绿:MARx100", x0 + 8, height - 8)
+}
+
 function displayResult(data) {
     latestResult = data
     emptyResult.classList.add("d-none")
     resultArea.classList.remove("d-none")
-    if (data.image_with_landmarks) {
-        resultImage.src = `data:image/jpeg;base64,${data.image_with_landmarks}`
+    const isVideo = data.mode === "video" || Boolean(data.processed_video_url)
+    if (isVideo) {
+        if (!data.processed_video_url) {
+            showToast("视频结果缺少处理后视频地址，请重试", "danger")
+            return
+        }
+        resultImage.classList.add("d-none")
+        resultVideo.classList.remove("d-none")
+        resultVideo.src = data.processed_video_url
+        resultVideo.load()
+        curveArea.classList.remove("d-none")
+        drawCurve(data.curves || {}, data.summary || {})
+        if (curveMeta) {
+            const summary = data.summary || {}
+            curveMeta.textContent = `时长 ${Number(summary.duration_sec || 0).toFixed(2)}s，帧数 ${summary.frame_count || 0}，峰值风险 ${summary.max_score || 0}`
+        }
+    } else {
+        resultVideo.classList.add("d-none")
+        resultVideo.removeAttribute("src")
+        resultVideo.load()
+        curveArea.classList.add("d-none")
+        if (data.image_with_landmarks) {
+            resultImage.src = `data:image/jpeg;base64,${data.image_with_landmarks}`
+        }
+        resultImage.classList.remove("d-none")
     }
     const level = data.fatigue_level || "alert"
     statusCard.classList.remove("level-alert", "level-fatigue", "level-severe_fatigue")

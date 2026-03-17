@@ -71,14 +71,15 @@ TIME_ZONE = "Asia/Shanghai"
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-STATIC_VERSION = os.getenv("STATIC_VERSION", "20260314")
+STATIC_VERSION = os.getenv("STATIC_VERSION", "20260317-video2")
 if not DEBUG:
     STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
 
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
+FFMPEG_BIN = os.getenv("FFMPEG_BIN", r"C:\ffmpeg\bin\ffmpeg.exe")
 
 CORS_ALLOW_ALL_ORIGINS = True
 
