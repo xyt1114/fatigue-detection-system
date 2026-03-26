@@ -33,9 +33,37 @@ const poseText = document.getElementById("poseText")
 const reasonText = document.getElementById("reasonText")
 const warningAlert = document.getElementById("warningAlert")
 const historyList = document.getElementById("historyList")
+const uploadRuntimeBadge = document.getElementById("uploadRuntimeBadge")
 const toastEl = document.getElementById("uploadToast")
 const toastBody = document.getElementById("toastBody")
 const toastInstance = toastEl ? new bootstrap.Toast(toastEl) : null
+
+function setRuntimeBadge(mode, ready) {
+    if (!uploadRuntimeBadge) {
+        return
+    }
+    const m = String(mode || "rule").toUpperCase()
+    uploadRuntimeBadge.className = "badge ms-2"
+    if (m === "ML") {
+        uploadRuntimeBadge.classList.add(ready ? "text-bg-success" : "text-bg-warning")
+    } else {
+        uploadRuntimeBadge.classList.add("text-bg-secondary")
+    }
+    uploadRuntimeBadge.textContent = `模式: ${m} · 模型: ${ready ? "已加载" : "未加载"}`
+}
+
+async function loadRuntimeStatus() {
+    try {
+        const resp = await fetch("/api/get_config/")
+        const data = await resp.json()
+        if (!resp.ok || data.status !== "success") {
+            throw new Error("读取运行状态失败")
+        }
+        setRuntimeBadge(data.classifier_mode, Boolean(data.ml_model_ready))
+    } catch (error) {
+        setRuntimeBadge("rule", false)
+    }
+}
 
 function showToast(message, level = "info") {
     if (!toastInstance || !toastBody) {
@@ -317,6 +345,7 @@ function displayResult(data) {
         warningAlert.classList.add("alert-success")
         warningAlert.textContent = "预警级别：正常"
     }
+    setRuntimeBadge(data.inference_mode || "rule", true)
     pushHistory(data)
     downloadBtn.disabled = false
 }
@@ -470,6 +499,7 @@ function bindEvents() {
 function init() {
     resetPreview()
     setProgress(0)
+    loadRuntimeStatus()
     renderHistory(JSON.parse(localStorage.getItem("fatigueHistory") || "[]"))
     bindEvents()
 }

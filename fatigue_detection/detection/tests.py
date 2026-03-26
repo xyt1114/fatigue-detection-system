@@ -147,6 +147,8 @@ class TestAPI(TestCase):
         data = resp.json()
         self.assertEqual(data["status"], "success")
         self.assertIn("config", data)
+        self.assertIn("classifier_mode", data)
+        self.assertIn("ml_model_ready", data)
 
     @patch("detection.views._extract_frame_from_upload")
     @patch("detection.views._detect_on_frame")
@@ -166,6 +168,7 @@ class TestAPI(TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["fatigue_level"], "alert")
         self.assertIn("image_with_landmarks", payload)
+        self.assertIn("inference_mode", payload)
 
     def test_detect_image_api(self):
         with patch("detection.views._extract_frame_from_upload") as mock_extract, patch(
@@ -202,8 +205,43 @@ class TestAPI(TestCase):
         payload = resp.json()
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["mode"], "video")
+        self.assertEqual(payload["warning_level"], "warning")
         self.assertIn("processed_video_url", payload)
         self.assertIn("curves", payload)
+        self.assertIn("warning_basis", payload)
+
+    @patch("detection.views._process_video_to_artifacts")
+    def test_api_detect_image_video_severe_not_enough_should_not_emergency(self, mock_video_process):
+        levels = ["alert"] * 10 + ["severe_fatigue"] * 3 + ["alert"] * 7
+        mock_video_process.return_value = (
+            {
+                "mode": "video",
+                "processed_video_url": "/media/processed/demo2.mp4",
+                "curves": {
+                    "times": [i * 0.1 for i in range(len(levels))],
+                    "ear": [0.25] * len(levels),
+                    "mar": [0.45] * len(levels),
+                    "score": [10] * len(levels),
+                    "levels": levels,
+                },
+                "summary": {
+                    "fps": 10.0,
+                    "frame_count": len(levels),
+                    "duration_sec": round(len(levels) / 10.0, 2),
+                    "max_score": 85,
+                    "max_level": "severe_fatigue",
+                    "fatigue_segments": [],
+                },
+            },
+            None,
+        )
+        file_obj = SimpleUploadedFile("b.mp4", b"fake-video", content_type="video/mp4")
+        resp = self.client.post(reverse("detection:api_detect_image"), {"file": file_obj})
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertEqual(payload["status"], "success")
+        self.assertEqual(payload["fatigue_level"], "severe_fatigue")
+        self.assertEqual(payload["warning_level"], "normal")
 
     @patch("detection.views._decode_base64_image")
     @patch("detection.views._detect_on_frame")
@@ -224,6 +262,7 @@ class TestAPI(TestCase):
         self.assertEqual(payload["status"], "success")
         self.assertEqual(payload["fatigue_level"], "severe_fatigue")
         self.assertIn("warning_level", payload)
+        self.assertIn("inference_mode", payload)
 
     @patch("detection.views._decode_base64_image")
     @patch("detection.views._detect_on_frame")

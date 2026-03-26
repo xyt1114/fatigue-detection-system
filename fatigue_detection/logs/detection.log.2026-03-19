@@ -1,0 +1,26 @@
+2026-03-19 13:18:52,525 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=severe_fatigue warning_level=normal
+2026-03-19 13:18:52,532 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=11.75 cache_hit=False
+2026-03-19 13:18:52,535 [INFO] detection: event=sampling endpoint=api_detect_image frame_index=0 strategy=raw detected=True
+2026-03-19 13:18:52,535 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=alert warning_level=normal
+2026-03-19 13:18:52,536 [INFO] detection: event=performance endpoint=api_detect_image elapsed_ms=1.03 cache_hit=False
+2026-03-19 13:18:52,735 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=fatigue warning_level=warning
+2026-03-19 13:18:52,735 [INFO] detection: event=performance endpoint=api_detect_image elapsed_ms=197.07 cache_hit=False
+2026-03-19 13:18:52,742 [INFO] detection: event=config_change user_id=127.0.0.1 old_config={'ear_threshold': 0.25, 'mar_threshold': 0.6, 'pitch_threshold': 30.0, 'warning_frame_count': 3, 'emergency_frame_count': 5} new_config={'ear_threshold': 0.23, 'mar_threshold': 0.65, 'pitch_threshold': 28.0, 'warning_frame_count': 4, 'emergency_frame_count': 7}
+2026-03-19 13:18:52,745 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=severe_fatigue warning_level=normal
+2026-03-19 13:18:52,745 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=1.96 cache_hit=False
+2026-03-19 13:18:52,748 [INFO] detection: event=sampling endpoint=api_detect_image frame_index=0 strategy=raw detected=True
+2026-03-19 13:18:52,748 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=alert warning_level=normal
+2026-03-19 13:18:52,750 [INFO] detection: event=performance endpoint=api_detect_image elapsed_ms=0.91 cache_hit=False
+2026-03-19 13:19:07,546 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=severe_fatigue warning_level=normal
+2026-03-19 13:19:07,546 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=2.05 cache_hit=False
+2026-03-19 13:19:07,549 [INFO] detection: event=sampling endpoint=api_detect_image frame_index=0 strategy=raw detected=True
+2026-03-19 13:19:07,549 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=alert warning_level=normal
+2026-03-19 13:19:07,549 [INFO] detection: event=performance endpoint=api_detect_image elapsed_ms=0.93 cache_hit=False
+2026-03-19 13:19:07,554 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=fatigue warning_level=warning
+2026-03-19 13:19:07,554 [INFO] detection: event=performance endpoint=api_detect_image elapsed_ms=2.55 cache_hit=False
+2026-03-19 13:19:07,558 [INFO] detection: event=config_change user_id=127.0.0.1 old_config={'ear_threshold': 0.25, 'mar_threshold': 0.6, 'pitch_threshold': 30.0, 'warning_frame_count': 3, 'emergency_frame_count': 5} new_config={'ear_threshold': 0.23, 'mar_threshold': 0.65, 'pitch_threshold': 28.0, 'warning_frame_count': 4, 'emergency_frame_count': 7}
+2026-03-19 13:19:07,561 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=severe_fatigue warning_level=normal
+2026-03-19 13:19:07,561 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=2.16 cache_hit=False
+2026-03-19 13:19:07,566 [INFO] detection: event=sampling endpoint=api_detect_image frame_index=0 strategy=raw detected=True
+2026-03-19 13:19:07,566 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=alert warning_level=normal
+2026-03-19 13:19:07,566 [INFO] detection: event=performance endpoint=api_detect_image elapsed_ms=1.03 cache_hit=False

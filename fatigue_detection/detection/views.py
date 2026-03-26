@@ -24,13 +24,14 @@ from .forms import ConfigForm, UploadForm
 from .models import DetectionLog, DetectionSession
 from .utils.config_manager import ConfigManager
 from .utils.logger import log_config_change, log_detection_event, log_performance_event, log_sampling_event
-from .utils.model_loader import get_detector_instances, rebuild_runtime_instances
+from .utils.model_loader import get_detector_instances, get_ml_classifier, rebuild_runtime_instances
 
 IMAGE_EXT = {"jpg", "jpeg", "png", "bmp"}
 VIDEO_EXT = {"mp4", "avi", "mov", "mkv"}
 
 _CONFIG_MANAGER = ConfigManager()
 _FACE_DETECTOR, _STATIC_FACE_DETECTOR, _FEATURE_EXTRACTOR, _CLASSIFIER, _WARNING_SYSTEM = get_detector_instances()
+_ML_CLASSIFIER = get_ml_classifier()
 _EXECUTOR = ThreadPoolExecutor(max_workers=4)
 _LOGGER = logging.getLogger(__name__)
 
@@ -156,6 +157,31 @@ def _draw_landmarks(frame, landmarks):
     return output
 
 
+def _resolve_classifier_mode():
+    mode = str(getattr(settings, "CLASSIFIER_MODE", "rule") or "rule").strip().lower()
+    if mode not in {"rule", "ml"}:
+        return "rule"
+    return mode
+
+
+def _classify_frame(frame, features):
+    mode = _resolve_classifier_mode()
+    if mode == "ml":
+        ml_result = _ML_CLASSIFIER.predict(frame) if _ML_CLASSIFIER else None
+        if ml_result is not None:
+            ml_result["inference_mode"] = "ml"
+            return ml_result
+    rule_result = _CLASSIFIER.classify(
+        ear=features["ear"],
+        mar=features["mar"],
+        head_pose=features["head_pose"],
+    )
+    rule_result["confidence"] = 0.0
+    rule_result["raw_label"] = "rule"
+    rule_result["inference_mode"] = "rule"
+    return rule_result
+
+
 def _detect_with_detector(frame, detector, include_annotation=True):
     face_result = detector.detect(frame)
     if not face_result:
@@ -165,9 +191,7 @@ def _detect_with_detector(frame, detector, include_annotation=True):
         return None
     try:
         features = _FEATURE_EXTRACTOR.extract_frame_features(landmarks, face_result["image_size"])
-        classify_result = _CLASSIFIER.classify(
-            ear=features["ear"], mar=features["mar"], head_pose=features["head_pose"]
-        )
+        classify_result = _classify_frame(frame, features)
         annotated = _draw_landmarks(frame, landmarks) if include_annotation else None
         return {
             "features": features,
@@ -189,9 +213,10 @@ def _detect_on_frame(frame, include_annotation=True, retry_static=True):
 
 def _detect_with_cache(frame, include_annotation=True, cache_ttl=300, retry_static=True):
     config_signature = str(sorted(_CONFIG_MANAGER.get_config().items()))
+    classifier_signature = _resolve_classifier_mode()
     frame_signature = _frame_hash(frame)
     cache_key = (
-        f"detect:frame:{frame_signature}:{hash(config_signature)}:{int(include_annotation)}:{int(retry_static)}"
+        f"detect:frame:{frame_signature}:{hash(config_signature)}:{classifier_signature}:{int(include_annotation)}:{int(retry_static)}"
     )
     cached_result = cache.get(cache_key)
     if cached_result is not None:
@@ -332,6 +357,35 @@ def _warning_from_level(level):
     if level == "fatigue":
         return "warning"
     return "normal"
+
+
+def _warning_from_video_levels(levels, max_level):
+    levels = list(levels or [])
+    if not levels:
+        return _warning_from_level(max_level), {
+            "severe_frame_count": 0,
+            "total_frame_count": 0,
+            "severe_ratio": 0.0,
+        }
+    severe_count = sum(1 for level in levels if level == "severe_fatigue")
+    fatigue_count = sum(1 for level in levels if level in {"fatigue", "severe_fatigue"})
+    total_count = len(levels)
+    severe_ratio = severe_count / total_count if total_count else 0.0
+    fatigue_ratio = fatigue_count / total_count if total_count else 0.0
+    severe_min_frames = int(settings.FATIGUE_CONFIG.get("VIDEO_SEVERE_EMERGENCY_MIN_FRAMES", 8))
+    severe_min_ratio = float(settings.FATIGUE_CONFIG.get("VIDEO_SEVERE_EMERGENCY_MIN_RATIO", 0.35))
+    warning_min_ratio = float(settings.FATIGUE_CONFIG.get("VIDEO_WARNING_MIN_RATIO", 0.25))
+    if severe_count >= severe_min_frames and severe_ratio >= severe_min_ratio:
+        warning_level = "emergency"
+    elif fatigue_ratio >= warning_min_ratio:
+        warning_level = "warning"
+    else:
+        warning_level = "normal"
+    return warning_level, {
+        "severe_frame_count": int(severe_count),
+        "total_frame_count": int(total_count),
+        "severe_ratio": round(float(severe_ratio), 4),
+    }
 
 
 def _build_fatigue_segments(times, levels):
@@ -663,11 +717,13 @@ def api_detect_image(request):
             return JsonResponse({"status": "error", "message": error_message or "视频处理失败"}, status=400)
 
         max_level = payload["summary"].get("max_level", "alert")
+        warning_level, warning_basis = _warning_from_video_levels(payload["curves"].get("levels"), max_level)
         response_payload = {
             "status": "success",
             "mode": "video",
+            "inference_mode": _resolve_classifier_mode(),
             "fatigue_level": max_level,
-            "warning_level": _warning_from_level(max_level),
+            "warning_level": warning_level,
             "score": int(payload["summary"].get("max_score", 0)),
             "ear": float(np.mean(payload["curves"].get("ear") or [0.0])),
             "mar": float(np.mean(payload["curves"].get("mar") or [0.0])),
@@ -676,6 +732,7 @@ def api_detect_image(request):
             "processed_video_url": payload["processed_video_url"],
             "curves": payload["curves"],
             "summary": payload["summary"],
+            "warning_basis": warning_basis,
         }
         elapsed = (time.perf_counter() - started_at) * 1000
         log_detection_event(user_id, max_level, response_payload["warning_level"])
@@ -697,6 +754,7 @@ def api_detect_image(request):
             "api_detect_image",
         ).result()
     except Exception:
+        _LOGGER.exception("api_detect_image执行失败")
         return JsonResponse(
             {"status": "error", "message": "检测过程异常，请重试或更换素材"},
             status=400,
@@ -711,6 +769,7 @@ def api_detect_image(request):
     response_payload = {
         "status": "success",
         "mode": "image",
+        "inference_mode": classify.get("inference_mode", _resolve_classifier_mode()),
         "fatigue_level": classify["status"],
         "ear": float(features["ear"]),
         "mar": float(features["mar"]),
@@ -718,6 +777,7 @@ def api_detect_image(request):
         "image_with_landmarks": _image_to_base64(detect_result["annotated"]),
         "score": int(classify["score"]),
         "reasons": classify["reasons"],
+        "confidence": float(classify.get("confidence", 0.0)),
     }
     elapsed = (time.perf_counter() - started_at) * 1000
     log_performance_event("api_detect_image", elapsed, cache_hit=cache_hit)
@@ -758,6 +818,7 @@ def api_detect_frame(request):
             False,
         ).result()
     except Exception:
+        _LOGGER.exception("api_detect_frame执行失败")
         return JsonResponse(
             {"status": "error", "message": "检测过程异常，请重试"},
             status=400,
@@ -781,6 +842,7 @@ def api_detect_frame(request):
         return JsonResponse(
             {
                 "status": "success",
+                "inference_mode": _resolve_classifier_mode(),
                 "fatigue_level": "alert",
                 "warning_level": warning["warning_level"],
                 "ear": 0.0,
@@ -792,22 +854,31 @@ def api_detect_frame(request):
         )
     features = detect_result["features"]
     classify = detect_result["classify"]
-    warning = _WARNING_SYSTEM.update(classify["status"])
+    warning = _WARNING_SYSTEM.update(
+        {
+            "status": classify["status"],
+            "inference_mode": classify.get("inference_mode", _resolve_classifier_mode()),
+            "ear": float(features.get("ear", 0.0)),
+            "mar": float(features.get("mar", 0.0)),
+        }
+    )
+    effective_status = warning.get("effective_status", classify["status"])
     try:
         if session:
             _persist_detection_result(
                 session=session,
                 features=features,
-                fatigue_level=classify["status"],
+                fatigue_level=effective_status,
                 warning_level=warning["warning_level"],
             )
             _close_session_if_needed(session, close_session)
     except Exception:
         pass
-    log_detection_event(user_id, classify["status"], warning["warning_level"])
+    log_detection_event(user_id, effective_status, warning["warning_level"])
     payload = {
         "status": "success",
-        "fatigue_level": classify["status"],
+        "inference_mode": classify.get("inference_mode", _resolve_classifier_mode()),
+        "fatigue_level": effective_status,
         "warning_level": warning["warning_level"],
         "ear": float(features["ear"]),
         "mar": float(features["mar"]),
@@ -816,6 +887,7 @@ def api_detect_frame(request):
         "head_pose": {k: float(v) for k, v in features["head_pose"].items()},
         "score": int(classify["score"]),
         "reasons": classify["reasons"],
+        "confidence": float(classify.get("confidence", 0.0)),
         "session_id": session.id if session else None,
     }
     elapsed = (time.perf_counter() - started_at) * 1000
@@ -826,7 +898,14 @@ def api_detect_frame(request):
 @csrf_exempt
 @api_view(["GET"])
 def api_get_config(request):
-    return JsonResponse({"status": "success", "config": _CONFIG_MANAGER.get_config()})
+    return JsonResponse(
+        {
+            "status": "success",
+            "config": _CONFIG_MANAGER.get_config(),
+            "classifier_mode": _resolve_classifier_mode(),
+            "ml_model_ready": bool(_ML_CLASSIFIER and _ML_CLASSIFIER.is_ready()),
+        }
+    )
 
 
 @csrf_exempt

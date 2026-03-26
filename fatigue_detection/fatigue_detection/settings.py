@@ -73,13 +73,15 @@ USE_TZ = True
 
 STATIC_URL = "/static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-STATIC_VERSION = os.getenv("STATIC_VERSION", "20260317-video2")
+STATIC_VERSION = os.getenv("STATIC_VERSION", "20260318-ml-badge")
 if not DEBUG:
     STATICFILES_STORAGE = "django.contrib.staticfiles.storage.ManifestStaticFilesStorage"
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", r"C:\ffmpeg\bin\ffmpeg.exe")
+CLASSIFIER_MODE = os.getenv("CLASSIFIER_MODE", "rule").strip().lower()
+ML_MODEL_PATH = Path(os.getenv("ML_MODEL_PATH", BASE_DIR / "models" / "fatigue_classifier_grouped.joblib"))
 
 CORS_ALLOW_ALL_ORIGINS = True
 
@@ -102,8 +104,17 @@ FATIGUE_CONFIG = {
     "EAR_THRESHOLD": 0.25,
     "MAR_THRESHOLD": 0.6,
     "PITCH_THRESHOLD": 30,
-    "WARNING_FRAME_COUNT": 3,
-    "EMERGENCY_FRAME_COUNT": 5,
+    "WARNING_FRAME_COUNT": 5,
+    "EMERGENCY_FRAME_COUNT": 7,
+    "FPS_HINT": 5.0,
+    "ML_FATIGUE_MIN_FRAMES": 3,
+    "ML_SEVERE_MIN_FRAMES": 4,
+    "BLINK_MAX_DURATION_SEC": 0.28,
+    "YAWN_WARNING_SEC": 0.8,
+    "YAWN_EMERGENCY_SEC": 1.4,
+    "VIDEO_SEVERE_EMERGENCY_MIN_FRAMES": 8,
+    "VIDEO_SEVERE_EMERGENCY_MIN_RATIO": 0.25,
+    "VIDEO_WARNING_MIN_RATIO": 0.20,
 }
 
 LOG_DIR = BASE_DIR / "logs"

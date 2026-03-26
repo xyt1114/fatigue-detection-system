@@ -4,7 +4,9 @@ let isSending = false
 let currentWarningLevel = "normal"
 let lastWarningSoundAt = 0
 let currentSessionId = null
-const warningCooldownMs = 2500
+let audioContextRef = null
+const warningCooldownMs = 2200
+const emergencyCooldownMs = 1200
 const DETECTION_FPS = 5
 const FRAME_INTERVAL = 1000 / DETECTION_FPS
 const SEND_DIFF_THRESHOLD = 2.2
@@ -34,6 +36,7 @@ const rollValue = document.getElementById("rollValue")
 const warningIndicator = document.getElementById("warningIndicator")
 const warningIcon = document.getElementById("warningIcon")
 const warningLabel = document.getElementById("warningLabel")
+const realtimeRuntimeBadge = document.getElementById("realtimeRuntimeBadge")
 const frameCountEl = document.getElementById("frameCount")
 const reasonValue = document.getElementById("reasonValue")
 const saveConfigBtn = document.getElementById("saveConfigBtn")
@@ -42,6 +45,33 @@ const resetConfigBtn = document.getElementById("resetConfigBtn")
 const toastEl = document.getElementById("realtimeToast")
 const toastBody = document.getElementById("realtimeToastBody")
 const toastInstance = toastEl ? new bootstrap.Toast(toastEl) : null
+
+function setRuntimeBadge(mode, ready) {
+    if (!realtimeRuntimeBadge) {
+        return
+    }
+    const m = String(mode || "rule").toUpperCase()
+    realtimeRuntimeBadge.className = "badge ms-2"
+    if (m === "ML") {
+        realtimeRuntimeBadge.classList.add(ready ? "text-bg-success" : "text-bg-warning")
+    } else {
+        realtimeRuntimeBadge.classList.add("text-bg-secondary")
+    }
+    realtimeRuntimeBadge.textContent = `模式: ${m} · 模型: ${ready ? "已加载" : "未加载"}`
+}
+
+async function loadRuntimeStatus() {
+    try {
+        const resp = await fetch("/api/get_config/")
+        const data = await resp.json()
+        if (!resp.ok || data.status !== "success") {
+            throw new Error("读取运行状态失败")
+        }
+        setRuntimeBadge(data.classifier_mode, Boolean(data.ml_model_ready))
+    } catch (error) {
+        setRuntimeBadge("rule", false)
+    }
+}
 
 function showToast(message, level = "info") {
     if (!toastInstance || !toastBody) {
@@ -240,12 +270,25 @@ function updateWarningUI(level) {
     }
 }
 
-function playBeep(frequency, durationMs) {
+function ensureAudioContext() {
     const AudioCtx = window.AudioContext || window.webkitAudioContext
     if (!AudioCtx) {
+        return null
+    }
+    if (!audioContextRef) {
+        audioContextRef = new AudioCtx()
+    }
+    if (audioContextRef.state === "suspended") {
+        audioContextRef.resume().catch(() => null)
+    }
+    return audioContextRef
+}
+
+function playBeep(frequency, durationMs) {
+    const ctx = ensureAudioContext()
+    if (!ctx) {
         return
     }
-    const ctx = new AudioCtx()
     const oscillator = ctx.createOscillator()
     const gain = ctx.createGain()
     oscillator.connect(gain)
@@ -253,25 +296,27 @@ function playBeep(frequency, durationMs) {
     oscillator.type = "square"
     oscillator.frequency.value = frequency
     gain.gain.setValueAtTime(0.0001, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.02)
+    gain.gain.exponentialRampToValueAtTime(0.16, ctx.currentTime + 0.02)
     gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000)
     oscillator.start()
     oscillator.stop(ctx.currentTime + durationMs / 1000)
 }
 
 function playWarning(level) {
+    if (level !== "warning" && level !== "emergency") {
+        return
+    }
     const now = Date.now()
-    if (now - lastWarningSoundAt < warningCooldownMs) {
+    const cooldown = level === "emergency" ? emergencyCooldownMs : warningCooldownMs
+    if (now - lastWarningSoundAt < cooldown) {
         return
     }
     lastWarningSoundAt = now
     if (level === "emergency") {
-        playBeep(920, 300)
+        playBeep(940, 280)
         return
     }
-    if (level === "warning") {
-        playBeep(760, 220)
-    }
+    playBeep(760, 220)
 }
 
 function handleFrameResult(data) {
@@ -295,9 +340,8 @@ function handleFrameResult(data) {
     frameCountEl.textContent = String(data.frame_count || 0)
     updateWarningUI(warningLevel)
     drawLandmarks(overlayCanvas, videoEl, data.landmarks, level)
-    if (warningLevel !== currentWarningLevel && (warningLevel === "warning" || warningLevel === "emergency")) {
-        playWarning(warningLevel)
-    }
+    playWarning(warningLevel)
+    setRuntimeBadge(data.inference_mode || "rule", true)
     currentWarningLevel = warningLevel
 }
 
@@ -340,6 +384,7 @@ function startDetection() {
     if (detectionInterval || !mediaStream) {
         return
     }
+    ensureAudioContext()
     startBtn.disabled = true
     stopBtn.disabled = false
     snapshotBtn.disabled = false
@@ -431,6 +476,7 @@ async function bootstrapRealtime() {
     }
     bindEvents()
     await initWebcam()
+    await loadRuntimeStatus()
     try {
         await window.ConfigUI.loadConfig()
     } catch (error) {

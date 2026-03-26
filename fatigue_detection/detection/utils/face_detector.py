@@ -15,8 +15,8 @@ class FaceDetector:
     LEFT_EYE_IDX = [36, 37, 38, 39, 40, 41]
     RIGHT_EYE_IDX = [42, 43, 44, 45, 46, 47]
     MOUTH_IDX = [48, 50, 52, 54, 56, 58]
-    # 头姿估计使用的参考点：鼻尖(30), 颏(8), 左眼左角(36), 右眼右角(45), 左嘴角(48), 右嘴角(54)
     POSE_IDX = [30, 8, 36, 45, 48, 54]
+    # 头姿估计使用的参考点：鼻尖(30), 颏(8), 左眼左角(36), 右眼右角(45), 左嘴角(48), 右嘴角(5
 
     def __init__(self, static_image_mode: bool = False, max_num_faces: int = 1, min_detection_confidence: float = 0.1):
         """

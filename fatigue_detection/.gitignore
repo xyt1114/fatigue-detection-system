@@ -1,0 +1,6 @@
+dataset/
+dataset_yolo/
+**/dataset/
+**/dataset_yolo/
+!models/
+!models/*.joblib
