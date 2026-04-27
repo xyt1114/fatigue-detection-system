@@ -2,6 +2,7 @@ from pathlib import Path
 
 from django.conf import settings
 
+from .cnn_classifier import CNNFatigueClassifier
 from .config_manager import ConfigManager
 from .face_detector import get_face_detector
 from .fatigue_classifier import FatigueClassifier
@@ -15,6 +16,7 @@ _feature_extractor = None
 _classifier = None
 _warning_system = None
 _ml_classifier = None
+_cnn_classifier = None
 
 
 def get_detector_instances():
@@ -52,6 +54,14 @@ def get_ml_classifier():
         model_path = Path(getattr(settings, "ML_MODEL_PATH", ""))
         _ml_classifier = MLFatigueClassifier(model_path=model_path)
     return _ml_classifier
+
+
+def get_cnn_classifier():
+    global _cnn_classifier
+    if _cnn_classifier is None:
+        model_path = Path(getattr(settings, "CNN_MODEL_PATH", ""))
+        _cnn_classifier = CNNFatigueClassifier(model_path=model_path)
+    return _cnn_classifier
 
 
 def rebuild_runtime_instances(config):

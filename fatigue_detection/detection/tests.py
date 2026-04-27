@@ -149,6 +149,7 @@ class TestAPI(TestCase):
         self.assertIn("config", data)
         self.assertIn("classifier_mode", data)
         self.assertIn("ml_model_ready", data)
+        self.assertIn("cnn_model_ready", data)
 
     @patch("detection.views._extract_frame_from_upload")
     @patch("detection.views._detect_on_frame")

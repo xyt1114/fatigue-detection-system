@@ -668,3 +668,21 @@ ValueError: points must have shape (6, 2)
 2026-03-27 00:11:27,862 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
 2026-03-27 00:22:00,958 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\fatigue_detection\settings.py changed, reloading.
 2026-03-27 00:22:05,767 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-04-23 19:11:24,383 [WARNING] django.request: Bad Request: /api/update_config/
+2026-04-23 19:11:50,356 [WARNING] django.request: Bad Request: /api/update_config/
+2026-04-23 19:13:46,652 [WARNING] django.request: Bad Request: /api/update_config/
+2026-04-23 19:24:02,989 [WARNING] django.request: Bad Request: /api/update_config/
+2026-04-23 19:48:46,955 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-04-23 20:00:30,877 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-04-24 10:40:21,576 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-04-24 10:40:26,977 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 10:43:15,767 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 10:43:28,651 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 10:44:12,830 [WARNING] django.request: Not Found: /favicon.ico
+2026-04-24 10:52:26,535 [INFO] django.utils.autoreload: C:\Users\86186\Documents\trae_projects\lunwen\fatigue_detection\fatigue_detection\settings.py changed, reloading.
+2026-04-24 10:53:20,754 [INFO] django.utils.autoreload: Watching for file changes with StatReloader
+2026-04-24 10:53:24,888 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 10:54:27,180 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 15:46:24,341 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 15:46:24,399 [WARNING] django.request: Not Found: /@vite/client
+2026-04-24 15:46:36,215 [INFO] django.utils.autoreload: Watching for file changes with StatReloader

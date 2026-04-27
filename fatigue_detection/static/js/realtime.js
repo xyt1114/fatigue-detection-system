@@ -52,12 +52,12 @@ function setRuntimeBadge(mode, ready) {
     }
     const m = String(mode || "rule").toUpperCase()
     realtimeRuntimeBadge.className = "badge ms-2"
-    if (m === "ML") {
+    if (m === "ML" || m === "CNN") {
         realtimeRuntimeBadge.classList.add(ready ? "text-bg-success" : "text-bg-warning")
     } else {
         realtimeRuntimeBadge.classList.add("text-bg-secondary")
     }
-    realtimeRuntimeBadge.textContent = `模式: ${m} · 模型: ${ready ? "已加载" : "未加载"}`
+    realtimeRuntimeBadge.textContent = `${m} 模式` + (m !== "RULE" ? (ready ? " (已加载)" : " (未加载)") : "")
 }
 
 async function loadRuntimeStatus() {
@@ -67,7 +67,9 @@ async function loadRuntimeStatus() {
         if (!resp.ok || data.status !== "success") {
             throw new Error("读取运行状态失败")
         }
-        setRuntimeBadge(data.classifier_mode, Boolean(data.ml_model_ready))
+        const m = String(data.classifier_mode || "rule").toUpperCase()
+        const isReady = m === "CNN" ? Boolean(data.cnn_model_ready) : Boolean(data.ml_model_ready)
+        setRuntimeBadge(data.classifier_mode, isReady)
     } catch (error) {
         setRuntimeBadge("rule", false)
     }

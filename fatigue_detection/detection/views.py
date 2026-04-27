@@ -159,18 +159,28 @@ def _draw_landmarks(frame, landmarks):
 
 def _resolve_classifier_mode():
     mode = str(getattr(settings, "CLASSIFIER_MODE", "rule") or "rule").strip().lower()
-    if mode not in {"rule", "ml"}:
+    if mode not in {"rule", "ml", "cnn"}:
         return "rule"
     return mode
 
 
 def _classify_frame(frame, features):
     mode = _resolve_classifier_mode()
+    
+    if mode == "cnn":
+        from .utils.model_loader import get_cnn_classifier
+        cnn_classifier = get_cnn_classifier()
+        cnn_result = cnn_classifier.predict(frame) if cnn_classifier else None
+        if cnn_result is not None:
+            cnn_result["inference_mode"] = "cnn"
+            return cnn_result
+            
     if mode == "ml":
         ml_result = _ML_CLASSIFIER.predict(frame) if _ML_CLASSIFIER else None
         if ml_result is not None:
             ml_result["inference_mode"] = "ml"
             return ml_result
+            
     rule_result = _CLASSIFIER.classify(
         ear=features["ear"],
         mar=features["mar"],
@@ -898,12 +908,15 @@ def api_detect_frame(request):
 @csrf_exempt
 @api_view(["GET"])
 def api_get_config(request):
+    from .utils.model_loader import get_cnn_classifier
+    cnn_classifier = get_cnn_classifier()
     return JsonResponse(
         {
             "status": "success",
             "config": _CONFIG_MANAGER.get_config(),
             "classifier_mode": _resolve_classifier_mode(),
             "ml_model_ready": bool(_ML_CLASSIFIER and _ML_CLASSIFIER.is_ready()),
+            "cnn_model_ready": bool(cnn_classifier and cnn_classifier.is_ready()),
         }
     )
 

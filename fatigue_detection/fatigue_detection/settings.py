@@ -80,8 +80,9 @@ if not DEBUG:
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", r"C:\ffmpeg\bin\ffmpeg.exe")
-CLASSIFIER_MODE = os.getenv("CLASSIFIER_MODE", "rule").strip().lower()
+CLASSIFIER_MODE = os.getenv("CLASSIFIER_MODE", "cnn").strip().lower()
 ML_MODEL_PATH = Path(os.getenv("ML_MODEL_PATH", BASE_DIR / "models" / "fatigue_classifier_grouped.joblib"))
+CNN_MODEL_PATH = Path(os.getenv("CNN_MODEL_PATH", BASE_DIR / "models" / "fatigue_classifier_cnn.pt"))
 
 CORS_ALLOW_ALL_ORIGINS = True
 
