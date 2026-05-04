@@ -22,6 +22,9 @@ class ConfigManager:
                         "fps_hint": float(settings.FATIGUE_CONFIG.get("FPS_HINT", 5.0)),
                         "ml_fatigue_min_frames": int(settings.FATIGUE_CONFIG.get("ML_FATIGUE_MIN_FRAMES", 2)),
                         "ml_severe_min_frames": int(settings.FATIGUE_CONFIG.get("ML_SEVERE_MIN_FRAMES", 3)),
+                        "eye_close_fatigue_min_frames": int(
+                            settings.FATIGUE_CONFIG.get("EYE_CLOSE_FATIGUE_MIN_FRAMES", 4)
+                        ),
                         "blink_max_duration_sec": float(settings.FATIGUE_CONFIG.get("BLINK_MAX_DURATION_SEC", 0.35)),
                         "yawn_warning_sec": float(settings.FATIGUE_CONFIG.get("YAWN_WARNING_SEC", 0.6)),
                         "yawn_emergency_sec": float(settings.FATIGUE_CONFIG.get("YAWN_EMERGENCY_SEC", 1.2)),
@@ -50,6 +53,10 @@ class ConfigManager:
             raise ValueError("ml_severe_min_frames 超出范围(1-60)")
         if int(config["ml_severe_min_frames"]) < int(config["ml_fatigue_min_frames"]):
             raise ValueError("ml_severe_min_frames 不能小于 ml_fatigue_min_frames")
+        if not 1 <= int(config["eye_close_fatigue_min_frames"]) <= 60:
+            raise ValueError("eye_close_fatigue_min_frames 超出范围(1-60)")
+        if int(config["eye_close_fatigue_min_frames"]) < int(config["ml_fatigue_min_frames"]):
+            raise ValueError("eye_close_fatigue_min_frames 不能小于 ml_fatigue_min_frames")
         if not 0.1 <= float(config["blink_max_duration_sec"]) <= 1.5:
             raise ValueError("blink_max_duration_sec 超出范围(0.1-1.5)")
         if not 0.2 <= float(config["yawn_warning_sec"]) <= 3.0:
@@ -77,6 +84,7 @@ class ConfigManager:
                 "fps_hint": float(merged["fps_hint"]),
                 "ml_fatigue_min_frames": int(merged["ml_fatigue_min_frames"]),
                 "ml_severe_min_frames": int(merged["ml_severe_min_frames"]),
+                "eye_close_fatigue_min_frames": int(merged["eye_close_fatigue_min_frames"]),
                 "blink_max_duration_sec": float(merged["blink_max_duration_sec"]),
                 "yawn_warning_sec": float(merged["yawn_warning_sec"]),
                 "yawn_emergency_sec": float(merged["yawn_emergency_sec"]),

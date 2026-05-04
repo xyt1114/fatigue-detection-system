@@ -80,7 +80,7 @@ if not DEBUG:
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 FFMPEG_BIN = os.getenv("FFMPEG_BIN", r"C:\ffmpeg\bin\ffmpeg.exe")
-CLASSIFIER_MODE = os.getenv("CLASSIFIER_MODE", "cnn").strip().lower()
+CLASSIFIER_MODE = os.getenv("CLASSIFIER_MODE", "fusion").strip().lower()
 ML_MODEL_PATH = Path(os.getenv("ML_MODEL_PATH", BASE_DIR / "models" / "fatigue_classifier_grouped.joblib"))
 CNN_MODEL_PATH = Path(os.getenv("CNN_MODEL_PATH", BASE_DIR / "models" / "fatigue_classifier_cnn.pt"))
 
@@ -110,6 +110,7 @@ FATIGUE_CONFIG = {
     "FPS_HINT": 5.0,
     "ML_FATIGUE_MIN_FRAMES": 3,
     "ML_SEVERE_MIN_FRAMES": 4,
+    "EYE_CLOSE_FATIGUE_MIN_FRAMES": 4,
     "BLINK_MAX_DURATION_SEC": 0.28,
     "YAWN_WARNING_SEC": 0.8,
     "YAWN_EMERGENCY_SEC": 1.4,

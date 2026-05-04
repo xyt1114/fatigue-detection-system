@@ -40,6 +40,34 @@ class FaceDetector:
         self._landmark_detector = cv2.face.createFacemarkLBF()
         self._landmark_detector.loadModel(lbf_path)
 
+    @staticmethod
+    def _enhance_gray(gray: np.ndarray) -> np.ndarray:
+        if gray is None or gray.ndim != 2:
+            return gray
+        denoised = cv2.GaussianBlur(gray, (3, 3), 0)
+        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+        enhanced = clahe.apply(denoised)
+        mean_val = float(np.mean(enhanced))
+        if mean_val < 95:
+            gamma = 1.2
+            lut = np.array(
+                [((i / 255.0) ** (1.0 / gamma)) * 255 for i in range(256)],
+                dtype=np.uint8,
+            )
+            enhanced = cv2.LUT(enhanced, lut)
+        return enhanced
+
+    @staticmethod
+    def _expand_face_box(face_box, image_width: int, image_height: int, scale_x: float = 0.18, scale_y: float = 0.22):
+        x, y, w, h = [int(v) for v in face_box]
+        pad_x = int(w * scale_x)
+        pad_y = int(h * scale_y)
+        left = max(0, x - pad_x)
+        top = max(0, y - pad_y)
+        right = min(image_width, x + w + pad_x)
+        bottom = min(image_height, y + h + pad_y)
+        return np.array([left, top, max(1, right - left), max(1, bottom - top)], dtype=np.int32)
+
     def detect(self, image: np.ndarray) -> Optional[Dict[str, np.ndarray]]:
         """
         对单帧 BGR 图像执行关键点检测。
@@ -60,15 +88,25 @@ class FaceDetector:
             
         height, width = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        enhanced_gray = self._enhance_gray(gray)
         
         # 多尺度人脸检测
         faces = self._face_detector.detectMultiScale(
-            gray, 
+            enhanced_gray,
             scaleFactor=1.05, 
             minNeighbors=3, 
             minSize=(30, 30),
             flags=cv2.CASCADE_SCALE_IMAGE
         )
+
+        if len(faces) == 0:
+            faces = self._face_detector.detectMultiScale(
+                gray,
+                scaleFactor=1.05,
+                minNeighbors=3,
+                minSize=(30, 30),
+                flags=cv2.CASCADE_SCALE_IMAGE,
+            )
         
         if len(faces) == 0:
             return None
@@ -76,15 +114,22 @@ class FaceDetector:
         # 如果有多个人脸，选择面积最大的一个
         if len(faces) > 1:
             faces = sorted(faces, key=lambda x: x[2] * x[3], reverse=True)
-        face_box = faces[0]
+        face_box = self._expand_face_box(faces[0], width, height)
         
         # 提取 68 个关键点
-        ok, landmarks = self._landmark_detector.fit(gray, np.array([face_box]))
+        ok, landmarks = self._landmark_detector.fit(enhanced_gray, np.array([face_box]))
+        if (not ok or landmarks is None or len(landmarks) == 0):
+            ok, landmarks = self._landmark_detector.fit(gray, np.array([face_box]))
         if not ok or landmarks is None or len(landmarks) == 0:
             return None
             
-        # landmarks 的形状是 (num_faces, 1, 68, 2)
-        points = landmarks[0][0]  # 取第一个人脸的 68 个点
+        # landmarks 的形状可能是 (1, 68, 2) 或类似结构
+        points = np.squeeze(landmarks[0])  # 压缩多余维度，确保形状为 (68, 2)
+        if points.shape != (68, 2):
+            # 防御性处理：如果形状不对，尝试调整
+            points = points.reshape(-1, 2)
+            if points.shape[0] < 68:
+                return None
         
         return {"all_landmarks": points, "image_size": (width, height)}
 

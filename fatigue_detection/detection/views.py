@@ -151,15 +151,136 @@ def _close_session_if_needed(session, should_close):
 
 def _draw_landmarks(frame, landmarks):
     output = frame.copy()
-    for key in ("left_eye", "right_eye", "mouth"):
-        for point in landmarks[key]:
-            cv2.circle(output, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)
+    points = landmarks.get("all_landmarks")
+    if points is None:
+        points = np.concatenate(
+            [landmarks["left_eye"], landmarks["right_eye"], landmarks["mouth"]],
+            axis=0,
+        )
+    for point in points:
+        cv2.circle(output, (int(point[0]), int(point[1])), 2, (0, 255, 0), -1)
     return output
+
+
+def _landmark_cache_key(session_id, user_id):
+    identity = session_id or user_id or "anonymous"
+    return f"realtime:landmarks:{identity}"
+
+
+def _head_pose_cache_key(session_id, user_id):
+    identity = session_id or user_id or "anonymous"
+    return f"realtime:head_pose:{identity}"
+
+
+def _smooth_landmarks(landmarks, session_id=None, user_id=None, alpha=0.68):
+    if not landmarks or "all_landmarks" not in landmarks:
+        return landmarks
+    points = np.asarray(landmarks["all_landmarks"], dtype=np.float32)
+    if points.shape != (68, 2):
+        return landmarks
+    cache_key = _landmark_cache_key(session_id, user_id)
+    previous = cache.get(cache_key)
+    smoothed = points
+    if isinstance(previous, np.ndarray) and previous.shape == (68, 2):
+        smoothed = alpha * points + (1.0 - alpha) * previous.astype(np.float32)
+    cache.set(cache_key, smoothed.astype(np.float32), timeout=120)
+    updated = dict(landmarks)
+    updated["all_landmarks"] = smoothed
+    for key, indices in (
+        ("left_eye", _FACE_DETECTOR.LEFT_EYE_IDX),
+        ("right_eye", _FACE_DETECTOR.RIGHT_EYE_IDX),
+        ("mouth", _FACE_DETECTOR.MOUTH_IDX),
+        ("pose_points_2d", _FACE_DETECTOR.POSE_IDX),
+    ):
+        updated[key] = smoothed[indices]
+    return updated
+
+
+def _clear_landmark_smoothing(session_id=None, user_id=None):
+    cache.delete(_landmark_cache_key(session_id, user_id))
+
+
+def _smooth_head_pose(
+    head_pose,
+    session_id=None,
+    user_id=None,
+    alpha=0.35,
+    yaw_roll_deadband=2.5,
+    pitch_deadband=1.2,
+):
+    if not isinstance(head_pose, dict):
+        return {"pitch": 0.0, "yaw": 0.0, "roll": 0.0}
+    current = {
+        "pitch": float(head_pose.get("pitch", 0.0) or 0.0),
+        "yaw": float(head_pose.get("yaw", 0.0) or 0.0),
+        "roll": float(head_pose.get("roll", 0.0) or 0.0),
+    }
+    cache_key = _head_pose_cache_key(session_id, user_id)
+    previous = cache.get(cache_key)
+    if not isinstance(previous, dict):
+        cache.set(cache_key, current, timeout=120)
+        return current
+
+    smoothed = {}
+    for axis in ("pitch", "yaw", "roll"):
+        prev_val = float(previous.get(axis, 0.0) or 0.0)
+        curr_val = current[axis]
+        blended = alpha * curr_val + (1.0 - alpha) * prev_val
+        deadband = pitch_deadband if axis == "pitch" else yaw_roll_deadband
+        smoothed[axis] = prev_val if abs(blended - prev_val) < deadband else blended
+    cache.set(cache_key, smoothed, timeout=120)
+    return smoothed
+
+
+def _clear_head_pose_smoothing(session_id=None, user_id=None):
+    cache.delete(_head_pose_cache_key(session_id, user_id))
+
+
+def _clear_realtime_smoothing(session_id=None, user_id=None):
+    _clear_landmark_smoothing(session_id=session_id, user_id=user_id)
+    _clear_head_pose_smoothing(session_id=session_id, user_id=user_id)
+
+
+def _extract_face_roi(frame, landmarks, padding_ratio=0.2):
+    if frame is None or not landmarks:
+        return frame
+    points = landmarks.get("all_landmarks")
+    if points is None:
+        points = np.concatenate(
+            [landmarks["left_eye"], landmarks["right_eye"], landmarks["mouth"]],
+            axis=0,
+        )
+    points = np.asarray(points, dtype=np.float32)
+    if points.size == 0:
+        return frame
+    x_min = float(np.min(points[:, 0]))
+    y_min = float(np.min(points[:, 1]))
+    x_max = float(np.max(points[:, 0]))
+    y_max = float(np.max(points[:, 1]))
+    width = max(1.0, x_max - x_min)
+    height = max(1.0, y_max - y_min)
+    pad_x = width * float(padding_ratio)
+    pad_y = height * float(padding_ratio)
+    h, w = frame.shape[:2]
+    left = max(0, int(x_min - pad_x))
+    top = max(0, int(y_min - pad_y))
+    right = min(w, int(x_max + pad_x))
+    bottom = min(h, int(y_max + pad_y))
+    if right - left < 16 or bottom - top < 16:
+        return frame
+    return frame[top:bottom, left:right].copy()
+
+
+def _prepare_face_roi_for_cnn(frame, landmarks):
+    roi = _extract_face_roi(frame, landmarks, padding_ratio=0.28)
+    if roi is None or roi.ndim != 3 or roi.size == 0:
+        return frame
+    return _enhance_frame_for_face_detection(roi)
 
 
 def _resolve_classifier_mode():
     mode = str(getattr(settings, "CLASSIFIER_MODE", "rule") or "rule").strip().lower()
-    if mode not in {"rule", "ml", "cnn"}:
+    if mode not in {"rule", "ml", "cnn", "fusion"}:
         return "rule"
     return mode
 
@@ -167,20 +288,6 @@ def _resolve_classifier_mode():
 def _classify_frame(frame, features):
     mode = _resolve_classifier_mode()
     
-    if mode == "cnn":
-        from .utils.model_loader import get_cnn_classifier
-        cnn_classifier = get_cnn_classifier()
-        cnn_result = cnn_classifier.predict(frame) if cnn_classifier else None
-        if cnn_result is not None:
-            cnn_result["inference_mode"] = "cnn"
-            return cnn_result
-            
-    if mode == "ml":
-        ml_result = _ML_CLASSIFIER.predict(frame) if _ML_CLASSIFIER else None
-        if ml_result is not None:
-            ml_result["inference_mode"] = "ml"
-            return ml_result
-            
     rule_result = _CLASSIFIER.classify(
         ear=features["ear"],
         mar=features["mar"],
@@ -189,6 +296,76 @@ def _classify_frame(frame, features):
     rule_result["confidence"] = 0.0
     rule_result["raw_label"] = "rule"
     rule_result["inference_mode"] = "rule"
+    
+    if mode in {"cnn", "fusion"}:
+        from .utils.model_loader import get_cnn_classifier
+        cnn_classifier = get_cnn_classifier()
+        
+        # --- 动态融合 (Dynamic Fusion) 逻辑 ---
+        if mode == "fusion":
+            # 1. 评估当前光照条件 (亮度)
+            if frame is not None and frame.size > 0:
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                brightness = float(np.mean(gray))
+            else:
+                brightness = 120.0 # 默认正常亮度
+            
+            # 2. 光照良好判定 (亮度适中)
+            is_good_lighting = 80 <= brightness <= 200
+            
+            # 3. 始终运行 CNN，保证主路判定
+            cnn_result = cnn_classifier.predict(frame) if cnn_classifier else None
+            
+            if cnn_result is not None:
+                rank = {"alert": 0, "fatigue": 1, "severe_fatigue": 2}
+                
+                # 4. 动态置信度加权：如果光照好，大幅提高规则的置信度权重；光照差，依赖 CNN
+                if is_good_lighting:
+                    # 光照好：规则特征提取极其准确，赋予极高置信度
+                    rule_confidence = 0.9
+                    cnn_result["confidence"] = min(1.0, cnn_result.get("confidence", 0.5) * 0.8) # 稍微压低CNN置信度
+                else:
+                    # 光照差：规则失效概率大，置信度调低，依赖CNN的泛化
+                    rule_confidence = 0.2
+                    cnn_result["confidence"] = min(1.0, cnn_result.get("confidence", 0.5) * 1.2) # 提高CNN置信度
+                
+                rule_result["confidence"] = rule_confidence
+                
+                # 5. 融合决策：高风险优先，但参考了环境动态置信度
+                # 即使光照差，如果规则仍然极度异常（比如闭眼时间极长），依然覆盖 CNN
+                if rank.get(rule_result["status"], 0) > rank.get(cnn_result.get("status", "alert"), 0):
+                    cnn_result["status"] = rule_result["status"]
+                    
+                # 融合最终得分（综合了光照调节后的置信度）
+                cnn_result["score"] = max(cnn_result.get("score", 0), rule_result.get("confidence", 0))
+                
+                reasons = set(cnn_result.get("reasons", []))
+                reasons.update(rule_result.get("reasons", []))
+                cnn_result["reasons"] = list(reasons)
+                
+                # 记录是光照好还是光照差的融合
+                cnn_result["inference_mode"] = "fusion_dynamic_good_light" if is_good_lighting else "fusion_dynamic_poor_light"
+                return cnn_result
+        else:
+            # 纯 CNN 模式
+            cnn_result = cnn_classifier.predict(frame) if cnn_classifier else None
+            if cnn_result is not None:
+                cnn_result["inference_mode"] = "cnn"
+                return cnn_result
+            
+    if mode == "ml":
+        ml_result = _ML_CLASSIFIER.predict(frame) if _ML_CLASSIFIER else None
+        if ml_result is not None:
+            rank = {"alert": 0, "fatigue": 1, "severe_fatigue": 2}
+            if rank.get(rule_result["status"], 0) > rank.get(ml_result.get("status", "alert"), 0):
+                ml_result["status"] = rule_result["status"]
+            ml_result["score"] = max(ml_result.get("score", 0), rule_result.get("score", 0))
+            reasons = set(ml_result.get("reasons", []))
+            reasons.update(rule_result.get("reasons", []))
+            ml_result["reasons"] = list(reasons)
+            ml_result["inference_mode"] = "ml"
+            return ml_result
+            
     return rule_result
 
 
@@ -201,12 +378,14 @@ def _detect_with_detector(frame, detector, include_annotation=True):
         return None
     try:
         features = _FEATURE_EXTRACTOR.extract_frame_features(landmarks, face_result["image_size"])
-        classify_result = _classify_frame(frame, features)
+        cnn_input = _prepare_face_roi_for_cnn(frame, landmarks)
+        classify_result = _classify_frame(cnn_input, features)
         annotated = _draw_landmarks(frame, landmarks) if include_annotation else None
         return {
             "features": features,
             "classify": classify_result,
             "annotated": annotated,
+            "landmarks": landmarks,
         }
     except Exception:
         return None
@@ -809,6 +988,10 @@ def api_detect_frame(request):
     persist = bool(payload.get("persist")) if isinstance(payload, dict) else False
     session_id = payload.get("session_id") if isinstance(payload, dict) else None
     close_session = bool(payload.get("close_session")) if isinstance(payload, dict) else False
+    render_mode = str(payload.get("render_mode") or "frontend").strip().lower() if isinstance(payload, dict) else "frontend"
+    if render_mode not in {"frontend", "backend"}:
+        render_mode = "frontend"
+    include_annotation = render_mode == "backend"
     session = None
     if persist or session_id:
         try:
@@ -820,13 +1003,32 @@ def api_detect_frame(request):
         return JsonResponse({"status": "error", "message": "frame参数无效，需base64图像"}, status=400)
     frame = _compress_image(frame, quality=75, max_size=640)
     try:
-        detect_result, cache_hit = _EXECUTOR.submit(
-            _detect_with_cache,
+        detect_result = _EXECUTOR.submit(
+            _detect_on_frame,
             frame,
-            False,
-            15,
-            False,
+            include_annotation,
+            True,  # 开启静态兜底重试
         ).result()
+        cache_hit = False
+        
+        # 第一次如果没检出，尝试用 CLAHE 增强图像对比度后再次检测
+        if not detect_result:
+            import cv2
+            lab = cv2.cvtColor(frame, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+            cl = clahe.apply(l)
+            limg = cv2.merge((cl, a, b))
+            enhanced_frame = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+            
+            detect_result = _EXECUTOR.submit(
+                _detect_on_frame,
+                enhanced_frame,
+                include_annotation,
+                True,
+            ).result()
+            cache_hit = False
+            
     except Exception:
         _LOGGER.exception("api_detect_frame执行失败")
         return JsonResponse(
@@ -834,6 +1036,7 @@ def api_detect_frame(request):
             status=400,
         )
     if not detect_result:
+        _clear_realtime_smoothing(session_id=session.id if session else session_id, user_id=user_id)
         warning = _WARNING_SYSTEM.update("alert")
         try:
             if session:
@@ -860,16 +1063,52 @@ def api_detect_frame(request):
                 "frame_count": warning["frame_count"],
                 "session_id": session.id if session else None,
                 "message": "未检测到人脸",
+                "face_detected": False,  # 明确标记给前端
+                "annotated_frame": f"data:image/jpeg;base64,{_image_to_base64(frame)}" if include_annotation else None,
+                "render_mode": render_mode,
             }
+        )
+    raw_landmarks = detect_result.get("landmarks", {})
+    smoothed_landmarks = _smooth_landmarks(
+        raw_landmarks,
+        session_id=session.id if session else session_id,
+        user_id=user_id,
+    )
+    if smoothed_landmarks:
+        detect_result["landmarks"] = smoothed_landmarks
+        detect_result["features"] = _FEATURE_EXTRACTOR.extract_frame_features(
+            smoothed_landmarks,
+            smoothed_landmarks.get("image_size"),
+        )
+        if include_annotation:
+            detect_result["annotated"] = _draw_landmarks(frame, smoothed_landmarks)
+    detect_result["features"]["head_pose"] = _smooth_head_pose(
+        detect_result["features"].get("head_pose"),
+        session_id=session.id if session else session_id,
+        user_id=user_id,
+    )
+    if detect_result.get("landmarks"):
+        detect_result["classify"] = _classify_frame(
+            _prepare_face_roi_for_cnn(frame, detect_result["landmarks"]),
+            detect_result["features"],
         )
     features = detect_result["features"]
     classify = detect_result["classify"]
+    raw_landmarks = detect_result.get("landmarks", {})
+    json_landmarks = {}
+    for k, v in raw_landmarks.items():
+        if isinstance(v, np.ndarray):
+            json_landmarks[k] = v.tolist()
+        elif isinstance(v, list):
+            json_landmarks[k] = v
+
     warning = _WARNING_SYSTEM.update(
         {
             "status": classify["status"],
             "inference_mode": classify.get("inference_mode", _resolve_classifier_mode()),
             "ear": float(features.get("ear", 0.0)),
             "mar": float(features.get("mar", 0.0)),
+            "pitch": float(features.get("head_pose", {}).get("pitch", 0.0)),
         }
     )
     effective_status = warning.get("effective_status", classify["status"])
@@ -882,9 +1121,16 @@ def api_detect_frame(request):
                 warning_level=warning["warning_level"],
             )
             _close_session_if_needed(session, close_session)
+            if close_session:
+                _clear_realtime_smoothing(session_id=session.id, user_id=user_id)
     except Exception:
         pass
     log_detection_event(user_id, effective_status, warning["warning_level"])
+    
+    annotated_b64 = None
+    if detect_result.get("annotated") is not None:
+        annotated_b64 = _image_to_base64(detect_result["annotated"])
+
     payload = {
         "status": "success",
         "inference_mode": classify.get("inference_mode", _resolve_classifier_mode()),
@@ -897,6 +1143,11 @@ def api_detect_frame(request):
         "head_pose": {k: float(v) for k, v in features["head_pose"].items()},
         "score": int(classify["score"]),
         "reasons": classify["reasons"],
+        "face_detected": True,  # 明确标记给前端
+        "landmarks": json_landmarks,
+        "annotated_frame": f"data:image/jpeg;base64,{annotated_b64}" if include_annotation and annotated_b64 else None,
+        "render_mode": render_mode,
+
         "confidence": float(classify.get("confidence", 0.0)),
         "session_id": session.id if session else None,
     }

@@ -11,14 +11,20 @@
             <div class="card-body">
                 <div class="d-flex flex-wrap gap-2 align-items-center justify-content-between mb-3">
                     <h1 class="h4 mb-0 d-flex align-items-center gap-2"><i class="bi bi-camera-video-fill text-primary"></i>疲劳驾驶检测 - 实时检测 <span id="realtimeRuntimeBadge" class="badge text-bg-secondary ms-2">模式: -- · 模型: --</span></h1>
-                    <div class="d-flex align-items-center gap-2">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <label for="renderModeSelect" class="form-label mb-0 small text-muted">显示模式</label>
+                        <select id="renderModeSelect" class="form-select form-select-sm camera-select">
+                            <option value="frontend">前端绘制</option>
+                            <option value="backend">后端渲染</option>
+                        </select>
                         <label for="cameraSelect" class="form-label mb-0 small text-muted">摄像头</label>
                         <select id="cameraSelect" class="form-select form-select-sm camera-select"></select>
                     </div>
                 </div>
-                <div class="video-stage ratio ratio-16x9 rounded overflow-hidden border">
-                    <video id="video" autoplay playsinline muted></video>
-                    <canvas id="overlayCanvas"></canvas>
+                <div class="video-stage ratio ratio-16x9 rounded overflow-hidden border position-relative">
+                    <video id="video" autoplay playsinline muted class="w-100 h-100 object-fit-cover position-absolute top-0 start-0" style="z-index: 1;"></video>
+                    <canvas id="overlayCanvas" class="position-absolute top-0 start-0 w-100 h-100" style="z-index: 2;"></canvas>
+                    <img id="annotatedImage" class="w-100 h-100 object-fit-contain position-absolute top-0 start-0" style="z-index: 3; display: none;" alt="检测画面" />
                 </div>
                 <div id="cameraError" class="alert alert-danger mt-3 d-none mb-0"></div>
                 <div class="d-flex flex-wrap gap-2 mt-3">

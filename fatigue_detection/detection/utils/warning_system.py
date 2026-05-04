@@ -12,6 +12,7 @@ class WarningSystem:
         fps_hint=5.0,
         ml_fatigue_min_frames=2,
         ml_severe_min_frames=3,
+        eye_close_fatigue_min_frames=4,
         blink_max_duration_sec=0.35,
         yawn_warning_sec=0.6,
         yawn_emergency_sec=1.2,
@@ -28,6 +29,10 @@ class WarningSystem:
         self.fps_hint = float(fps_hint) if float(fps_hint) > 0 else 5.0
         self.ml_fatigue_min_frames = max(1, int(ml_fatigue_min_frames))
         self.ml_severe_min_frames = max(self.ml_fatigue_min_frames, int(ml_severe_min_frames))
+        self.eye_close_fatigue_min_frames = max(
+            self.ml_fatigue_min_frames,
+            int(eye_close_fatigue_min_frames),
+        )
         self.blink_max_duration_sec = float(blink_max_duration_sec)
         self.yawn_warning_sec = float(yawn_warning_sec)
         self.yawn_emergency_sec = float(yawn_emergency_sec)
@@ -49,11 +54,13 @@ class WarningSystem:
                 str(fatigue_status.get("inference_mode", "rule") or "rule").lower(),
                 float(fatigue_status.get("ear", 0.0) or 0.0),
                 float(fatigue_status.get("mar", 0.0) or 0.0),
+                float(fatigue_status.get("pitch", 0.0) or 0.0),
             )
-        return fatigue_status, "rule", 0.0, 0.0
+        return fatigue_status, "rule", 0.0, 0.0, 0.0
 
-    def _apply_ml_temporal_gate(self, status, inference_mode, ear, mar):
-        if inference_mode != "ml":
+    def _apply_ml_temporal_gate(self, status, inference_mode, ear, mar, pitch):
+        # Allow dynamic fusion modes to pass through temporal gating
+        if inference_mode not in {"ml", "cnn", "fusion", "fusion_dynamic_good_light", "fusion_dynamic_poor_light"}:
             self.ml_fatigue_streak = 0
             self.ml_severe_streak = 0
             self.eye_close_streak = 0
@@ -61,11 +68,15 @@ class WarningSystem:
             return status
 
         frame_sec = self._frame_duration_sec()
-        if ear > 0 and ear < 0.22:
+        eye_is_closed = ear > 0 and ear < 0.25
+        mouth_is_open = mar > 0.6
+        head_is_down = pitch > 30.0
+
+        if eye_is_closed:
             self.eye_close_streak += 1
         else:
             self.eye_close_streak = 0
-        if mar > 0.72:
+        if mouth_is_open:
             self.mouth_open_streak += 1
         else:
             self.mouth_open_streak = 0
@@ -88,6 +99,9 @@ class WarningSystem:
             return "alert"
         if mouth_open_sec > 0 and mouth_open_sec < self.yawn_warning_sec:
             return "alert"
+        if eye_is_closed and (not mouth_is_open) and (not head_is_down):
+            if self.eye_close_streak < self.eye_close_fatigue_min_frames:
+                return "alert"
 
         if status == "severe_fatigue":
             if mouth_open_sec >= self.yawn_warning_sec and mouth_open_sec < self.yawn_emergency_sec:
@@ -114,8 +128,8 @@ class WarningSystem:
                 "trigger_alert": bool
             }
         """
-        status, inference_mode, ear, mar = self._extract_status_payload(fatigue_status)
-        status = self._apply_ml_temporal_gate(status, inference_mode, ear, mar)
+        status, inference_mode, ear, mar, pitch = self._extract_status_payload(fatigue_status)
+        status = self._apply_ml_temporal_gate(status, inference_mode, ear, mar, pitch)
         previous_state = self.warning_state
         if status == "severe_fatigue":
             self.fatigue_frame_count += 1
@@ -124,8 +138,13 @@ class WarningSystem:
             self.fatigue_frame_count += 1
             self.severe_frame_count = 0
         else:
-            self.reset()
-            return {"warning_level": "normal", "frame_count": 0, "trigger_alert": previous_state != "normal"}
+            self._reset_warning_state()
+            return {
+                "effective_status": "alert",
+                "warning_level": "normal",
+                "frame_count": 0,
+                "trigger_alert": previous_state != "normal",
+            }
 
         if self.severe_frame_count >= self.emergency_frame_count:
             self.warning_state = "emergency"
@@ -148,12 +167,15 @@ class WarningSystem:
         """
         重置所有计数器和状态。
         """
-        self.fatigue_frame_count = 0
-        self.severe_frame_count = 0
+        self._reset_warning_state()
         self.ml_fatigue_streak = 0
         self.ml_severe_streak = 0
         self.eye_close_streak = 0
         self.mouth_open_streak = 0
+
+    def _reset_warning_state(self):
+        self.fatigue_frame_count = 0
+        self.severe_frame_count = 0
         self.warning_state = "normal"
 
     def process_sequence(self, fatigue_status_sequence):

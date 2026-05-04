@@ -5,19 +5,22 @@ let currentWarningLevel = "normal"
 let lastWarningSoundAt = 0
 let currentSessionId = null
 let audioContextRef = null
+let currentRenderMode = localStorage.getItem("realtime_render_mode") || "frontend"
 const warningCooldownMs = 2200
 const emergencyCooldownMs = 1200
 const DETECTION_FPS = 5
 const FRAME_INTERVAL = 1000 / DETECTION_FPS
-const SEND_DIFF_THRESHOLD = 2.2
+const SEND_DIFF_THRESHOLD = 0.0 // 禁用基于亮度的帧跳过，避免张嘴等小动作时关键点卡住
 let lastFrameSample = null
 let browserFaceDetector = null
 
 const videoEl = document.getElementById("video")
 const overlayCanvas = document.getElementById("overlayCanvas")
 const overlayCtx = overlayCanvas.getContext("2d")
+const annotatedImage = document.getElementById("annotatedImage")
 const captureCanvas = document.getElementById("captureCanvas")
 const captureCtx = captureCanvas.getContext("2d")
+const renderModeSelect = document.getElementById("renderModeSelect")
 const cameraSelect = document.getElementById("cameraSelect")
 const startBtn = document.getElementById("startBtn")
 const stopBtn = document.getElementById("stopBtn")
@@ -95,6 +98,27 @@ function setCameraError(message) {
     cameraError.textContent = message
 }
 
+function normalizeRenderMode(mode) {
+    return mode === "backend" ? "backend" : "frontend"
+}
+
+function applyRenderMode(mode) {
+    currentRenderMode = normalizeRenderMode(mode)
+    localStorage.setItem("realtime_render_mode", currentRenderMode)
+    if (renderModeSelect) {
+        renderModeSelect.value = currentRenderMode
+    }
+    const useBackendRender = currentRenderMode === "backend"
+    videoEl.style.display = useBackendRender ? "none" : "block"
+    overlayCanvas.style.display = useBackendRender ? "none" : "block"
+    if (!useBackendRender) {
+        annotatedImage.src = ""
+        annotatedImage.style.display = "none"
+    } else {
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    }
+}
+
 function resetStatusUI() {
     fatigueLevelText.className = "fatigue-level level-alert d-inline-flex align-items-center gap-2"
     fatigueLevelIcon.className = "bi bi-emoji-smile"
@@ -112,6 +136,10 @@ function resetStatusUI() {
     frameCountEl.textContent = "0"
     reasonValue.textContent = "无"
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    if (annotatedImage) {
+        annotatedImage.src = ""
+        annotatedImage.style.display = "none"
+    }
 }
 
 function syncCanvasSize() {
@@ -241,7 +269,23 @@ function drawLandmarks(canvas, video, landmarks, fatigueStatus) {
     ctx.font = "18px sans-serif"
     ctx.fillStyle = color
     ctx.fillText(`STATUS: ${String(fatigueStatus || "alert").toUpperCase()}`, 14, 30)
-    if (Array.isArray(landmarks)) {
+    if (landmarks && Array.isArray(landmarks.all_landmarks)) {
+        ctx.fillStyle = "#00ff8a"
+        
+        // 计算坐标缩放比例
+        // 后端接收到的图片最大边长是 640 (前端 encodeFrameForUpload 时做的缩放)
+        const w = video.videoWidth || 640
+        const h = video.videoHeight || 360
+        const scale = Math.min(1, 640 / Math.max(w, h))
+        
+        landmarks.all_landmarks.forEach(point => {
+            const x = Number(point[0] || 0) / scale
+            const y = Number(point[1] || 0) / scale
+            ctx.beginPath()
+            ctx.arc(x, y, 2.2, 0, Math.PI * 2)
+            ctx.fill()
+        })
+    } else if (Array.isArray(landmarks)) {
         ctx.fillStyle = "#00ff8a"
         landmarks.forEach(point => {
             const x = Number(point.x || point[0] || 0)
@@ -322,6 +366,35 @@ function playWarning(level) {
 }
 
 function handleFrameResult(data) {
+    const renderMode = normalizeRenderMode(data.render_mode || currentRenderMode)
+    applyRenderMode(renderMode)
+    if (data.face_detected === false || data.message === "未检测到人脸") {
+        fatigueLevelText.className = "fatigue-level level-normal d-inline-flex align-items-center gap-2 text-muted"
+        fatigueLevelLabel.textContent = "未检测到人脸"
+        fatigueLevelIcon.className = "bi bi-question-circle"
+        earValue.textContent = "--"
+        marValue.textContent = "--"
+        earProgress.style.width = "0%"
+        marProgress.style.width = "0%"
+        pitchValue.textContent = "--"
+        yawValue.textContent = "--"
+        rollValue.textContent = "--"
+        reasonValue.textContent = "未检测到有效人脸"
+        frameCountEl.textContent = String(data.frame_count || 0)
+        updateWarningUI("normal")
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+        if (renderMode === "backend" && annotatedImage) {
+            if (data.annotated_frame) {
+                annotatedImage.src = data.annotated_frame
+                annotatedImage.style.display = "block"
+            } else {
+                annotatedImage.src = ""
+                annotatedImage.style.display = "none"
+            }
+        }
+        return
+    }
+
     const level = data.fatigue_level || "alert"
     fatigueLevelText.className = `fatigue-level level-${level} d-inline-flex align-items-center gap-2`
     fatigueLevelLabel.textContent = String(level).toUpperCase()
@@ -341,7 +414,22 @@ function handleFrameResult(data) {
     const warningLevel = data.warning_level || "normal"
     frameCountEl.textContent = String(data.frame_count || 0)
     updateWarningUI(warningLevel)
-    drawLandmarks(overlayCanvas, videoEl, data.landmarks, level)
+
+    if (renderMode === "backend") {
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+        if (annotatedImage && data.annotated_frame) {
+            annotatedImage.src = data.annotated_frame
+            annotatedImage.style.display = "block"
+        } else if (annotatedImage) {
+            annotatedImage.src = ""
+            annotatedImage.style.display = "none"
+        }
+    } else {
+        annotatedImage.src = ""
+        annotatedImage.style.display = "none"
+        drawLandmarks(overlayCanvas, videoEl, data.landmarks, level)
+    }
+
     playWarning(warningLevel)
     setRuntimeBadge(data.inference_mode || "rule", true)
     currentWarningLevel = warningLevel
@@ -365,7 +453,12 @@ async function detectFrameOnce() {
         const response = await fetch("/api/detect_frame/", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ frame: frameBase64, persist: true, session_id: currentSessionId })
+            body: JSON.stringify({
+                frame: frameBase64,
+                persist: true,
+                session_id: currentSessionId,
+                render_mode: currentRenderMode,
+            })
         })
         const result = await response.json()
         if (!response.ok || result.status !== "success") {
@@ -408,6 +501,13 @@ function stopDetection() {
 }
 
 function captureSnapshot() {
+    if (currentRenderMode === "backend" && annotatedImage?.src) {
+        const link = document.createElement("a")
+        link.href = annotatedImage.src
+        link.download = `realtime_snapshot_${Date.now()}.png`
+        link.click()
+        return
+    }
     if (!mediaStream || videoEl.readyState < 2) {
         showToast("摄像头未准备好")
         return
@@ -460,6 +560,10 @@ function bindEvents() {
             startDetection()
         }
     })
+    renderModeSelect.addEventListener("change", event => {
+        applyRenderMode(event.target.value)
+        resetStatusUI()
+    })
     window.addEventListener("resize", syncCanvasSize)
 }
 
@@ -476,6 +580,7 @@ async function bootstrapRealtime() {
             browserFaceDetector = null
         }
     }
+    applyRenderMode(currentRenderMode)
     bindEvents()
     await initWebcam()
     await loadRuntimeStatus()

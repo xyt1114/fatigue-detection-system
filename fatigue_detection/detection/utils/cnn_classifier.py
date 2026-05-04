@@ -8,18 +8,26 @@ _LOGGER = logging.getLogger(__name__)
 
 try:
     import torch
+    import torch.nn as nn
     import torch.nn.functional as F
-    from torchvision import transforms
+    from torchvision import models, transforms
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
+
+
+def _build_mobilenet_v3_small(num_classes):
+    model = models.mobilenet_v3_small(weights=None)
+    in_features = model.classifier[3].in_features
+    model.classifier[3] = nn.Linear(in_features, num_classes)
+    return model
 
 
 class CNNFatigueClassifier:
     def __init__(self, model_path):
         self.model_path = Path(model_path)
         self._model = None
-        self._input_size = (112, 112)
+        self._input_size = (224, 224)
         self._classes = ["awake", "mild", "severe"]
         self._label_to_status = {
             "awake": "alert",
@@ -44,8 +52,24 @@ class CNNFatigueClassifier:
 
         try:
             self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            # 假设保存的是完整的模型或 TorchScript 模型
-            self._model = torch.load(self.model_path, map_location=self._device)
+            loaded = torch.load(self.model_path, map_location=self._device, weights_only=False)
+
+            if isinstance(loaded, dict) and "model_state_dict" in loaded:
+                classes = loaded.get("class_names")
+                if isinstance(classes, (list, tuple)) and classes:
+                    self._classes = [str(item) for item in classes]
+                input_size = loaded.get("input_size")
+                if isinstance(input_size, (list, tuple)) and len(input_size) == 2:
+                    self._input_size = (int(input_size[0]), int(input_size[1]))
+                self._model = _build_mobilenet_v3_small(num_classes=len(self._classes))
+                self._model.load_state_dict(loaded["model_state_dict"])
+            elif isinstance(loaded, dict) and all(torch.is_tensor(v) for v in loaded.values()):
+                self._model = _build_mobilenet_v3_small(num_classes=len(self._classes))
+                self._model.load_state_dict(loaded)
+            else:
+                self._model = loaded
+
+            self._model = self._model.to(self._device)
             self._model.eval()
 
             self._transform = transforms.Compose([

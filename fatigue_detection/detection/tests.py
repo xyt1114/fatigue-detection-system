@@ -61,9 +61,11 @@ class TestFeatureExtractor(SimpleTestCase):
     def test_fatigue_classification(self):
         classifier = FatigueClassifier(ear_threshold=0.25, mar_threshold=0.6, pitch_threshold=30)
         alert = classifier.classify(ear=0.3, mar=0.3, head_pose={"pitch": 5})
-        fatigue = classifier.classify(ear=0.2, mar=0.35, head_pose={"pitch": 10})
+        low_score_alert = classifier.classify(ear=0.2, mar=0.35, head_pose={"pitch": 10})
+        fatigue = classifier.classify(ear=0.3, mar=0.7, head_pose={"pitch": 35})
         severe = classifier.classify(ear=0.2, mar=0.7, head_pose={"pitch": 35})
         self.assertEqual(alert["status"], "alert")
+        self.assertEqual(low_score_alert["status"], "alert")
         self.assertEqual(fatigue["status"], "fatigue")
         self.assertEqual(severe["status"], "severe_fatigue")
 
@@ -83,6 +85,33 @@ class TestFeatureExtractor(SimpleTestCase):
         self.assertEqual(outputs[0]["warning_level"], "normal")
         self.assertEqual(outputs[3]["warning_level"], "warning")
         self.assertEqual(outputs[-1]["warning_level"], "emergency")
+
+    def test_warning_system_requires_longer_eye_close_for_fatigue(self):
+        warning = WarningSystem(
+            warning_frame_count=3,
+            emergency_frame_count=5,
+            fps_hint=5.0,
+            ml_fatigue_min_frames=3,
+            ml_severe_min_frames=4,
+            eye_close_fatigue_min_frames=4,
+            blink_max_duration_sec=0.28,
+        )
+        outputs = [
+            warning.update(
+                {
+                    "status": "fatigue",
+                    "inference_mode": "fusion",
+                    "ear": 0.2,
+                    "mar": 0.2,
+                    "pitch": 10.0,
+                }
+            )
+            for _ in range(4)
+        ]
+        self.assertEqual(outputs[0]["effective_status"], "alert")
+        self.assertEqual(outputs[1]["effective_status"], "alert")
+        self.assertEqual(outputs[2]["effective_status"], "alert")
+        self.assertEqual(outputs[3]["effective_status"], "fatigue")
 
     @patch("detection.utils.feature_extractor.cv2.solvePnP")
     @patch("detection.utils.feature_extractor.cv2.Rodrigues")
@@ -250,7 +279,12 @@ class TestAPI(TestCase):
         mock_decode.return_value = np.zeros((32, 32, 3), dtype=np.uint8)
         mock_detect.return_value = {
             "features": {"ear": 0.2, "mar": 0.7, "head_pose": {"pitch": 35.0, "yaw": 1.0, "roll": 2.0}},
-            "classify": {"status": "severe_fatigue", "score": 90, "reasons": ["eye_closed", "head_down"]},
+            "classify": {
+                "status": "severe_fatigue",
+                "score": 90,
+                "reasons": ["eye_closed", "head_down"],
+                "inference_mode": "rule",
+            },
             "annotated": np.zeros((32, 32, 3), dtype=np.uint8),
         }
         resp = self.client.post(
@@ -271,7 +305,12 @@ class TestAPI(TestCase):
         mock_decode.return_value = np.zeros((32, 32, 3), dtype=np.uint8)
         mock_detect.return_value = {
             "features": {"ear": 0.2, "mar": 0.7, "head_pose": {"pitch": 35.0, "yaw": 1.0, "roll": 2.0}},
-            "classify": {"status": "severe_fatigue", "score": 90, "reasons": ["eye_closed", "head_down"]},
+            "classify": {
+                "status": "severe_fatigue",
+                "score": 90,
+                "reasons": ["eye_closed", "head_down"],
+                "inference_mode": "rule",
+            },
             "annotated": np.zeros((32, 32, 3), dtype=np.uint8),
         }
         resp = self.client.post(
@@ -340,6 +379,10 @@ class ConfigManagerTestCase(SimpleTestCase):
         self.assertEqual(reset["ear_threshold"], float(settings.FATIGUE_CONFIG["EAR_THRESHOLD"]))
         self.assertEqual(reset["mar_threshold"], float(settings.FATIGUE_CONFIG["MAR_THRESHOLD"]))
         self.assertEqual(reset["pitch_threshold"], float(settings.FATIGUE_CONFIG["PITCH_THRESHOLD"]))
+        self.assertEqual(
+            reset["eye_close_fatigue_min_frames"],
+            int(settings.FATIGUE_CONFIG["EYE_CLOSE_FATIGUE_MIN_FRAMES"]),
+        )
 
     def test_config_manager_validation(self):
         manager = ConfigManager()

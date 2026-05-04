@@ -5,7 +5,7 @@ class FatigueClassifier:
     根据 EAR、MAR 和头部姿态进行规则化判定，输出状态、风险分值和触发原因。
     """
 
-    def __init__(self, ear_threshold=0.25, mar_threshold=0.6, pitch_threshold=30.0):
+    def __init__(self, ear_threshold=0.25, mar_threshold=0.6, pitch_threshold=30.0, alert_score_max=50):
         """
         初始化阈值配置。
 
@@ -13,10 +13,12 @@ class FatigueClassifier:
             ear_threshold: 眼睛闭合阈值，小于该值判定 eye_closed。
             mar_threshold: 张嘴阈值，大于该值判定 mouth_open。
             pitch_threshold: 低头阈值，大于该值判定 head_down。
+            alert_score_max: 清醒上限分值，小于等于该值判定 alert。
         """
         self.ear_threshold = float(ear_threshold)
         self.mar_threshold = float(mar_threshold)
         self.pitch_threshold = float(pitch_threshold)
+        self.alert_score_max = max(0, min(100, int(alert_score_max)))
 
     def classify(self, ear, mar, head_pose):
         """
@@ -50,10 +52,10 @@ class FatigueClassifier:
         severe = score >= 75 or ("eye_closed" in reasons and "head_down" in reasons)
         if severe:
             status = "severe_fatigue"
-        elif score > 0:
-            status = "fatigue"
-        else:
+        elif score <= self.alert_score_max:
             status = "alert"
+        else:
+            status = "fatigue"
         return {"status": status, "score": score, "reasons": reasons}
 
     def classify_sequence(self, feature_sequence):
@@ -91,6 +93,7 @@ class FatigueClassifier:
             "ear_threshold": self.ear_threshold,
             "mar_threshold": self.mar_threshold,
             "pitch_threshold": self.pitch_threshold,
+            "alert_score_max": self.alert_score_max,
         }
 
     def usage_example(self):
@@ -106,12 +109,18 @@ class FatigueClassifier:
 _FATIGUE_CLASSIFIER_SINGLETON = None
 
 
-def get_fatigue_classifier(ear_threshold=0.25, mar_threshold=0.6, pitch_threshold=30.0) -> FatigueClassifier:
+def get_fatigue_classifier(
+    ear_threshold=0.25,
+    mar_threshold=0.6,
+    pitch_threshold=30.0,
+    alert_score_max=50,
+) -> FatigueClassifier:
     global _FATIGUE_CLASSIFIER_SINGLETON
     if _FATIGUE_CLASSIFIER_SINGLETON is None:
         _FATIGUE_CLASSIFIER_SINGLETON = FatigueClassifier(
             ear_threshold=ear_threshold,
             mar_threshold=mar_threshold,
             pitch_threshold=pitch_threshold,
+            alert_score_max=alert_score_max,
         )
     return _FATIGUE_CLASSIFIER_SINGLETON

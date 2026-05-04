@@ -1,0 +1,6 @@
+2026-04-30 15:23:36,479 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=fatigue warning_level=normal
+2026-04-30 15:23:36,491 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=800.83 cache_hit=False
+2026-04-30 15:23:42,326 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=fatigue warning_level=normal
+2026-04-30 15:23:42,326 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=163.57 cache_hit=False
+2026-04-30 15:23:42,724 [INFO] detection: event=detection user_id=127.0.0.1 fatigue_level=fatigue warning_level=normal
+2026-04-30 15:23:42,725 [INFO] detection: event=performance endpoint=api_detect_frame elapsed_ms=163.04 cache_hit=False

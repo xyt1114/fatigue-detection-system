@@ -38,10 +38,20 @@ def decide_class(label_file):
 
 def convert_dataset(source_dir, output_root):
     output_raw = output_root / "raw"
+    output_splits = output_root / "splits"
     for class_name in ("awake", "mild", "severe"):
         (output_raw / class_name).mkdir(parents=True, exist_ok=True)
+        for split in ("train", "valid", "test"):
+            (output_splits / split / class_name).mkdir(parents=True, exist_ok=True)
 
-    stats = {"awake": 0, "mild": 0, "severe": 0, "skipped": 0}
+    stats = {
+        "total": {"awake": 0, "mild": 0, "severe": 0, "skipped": 0},
+        "splits": {
+            "train": {"awake": 0, "mild": 0, "severe": 0, "skipped": 0},
+            "valid": {"awake": 0, "mild": 0, "severe": 0, "skipped": 0},
+            "test": {"awake": 0, "mild": 0, "severe": 0, "skipped": 0},
+        },
+    }
     for split in ("train", "valid", "test"):
         image_dir = source_dir / split / "images"
         label_dir = source_dir / split / "labels"
@@ -53,12 +63,17 @@ def convert_dataset(source_dir, output_root):
             label_file = label_dir / f"{image_file.stem}.txt"
             class_name = decide_class(label_file)
             if class_name is None:
-                stats["skipped"] += 1
+                stats["total"]["skipped"] += 1
+                stats["splits"][split]["skipped"] += 1
                 continue
-            target_file = output_raw / class_name / f"{split}_{image_file.name}"
-            shutil.copy2(image_file, target_file)
-            stats[class_name] += 1
-    return stats, output_raw
+            output_name = f"{split}_{image_file.name}"
+            split_target = output_splits / split / class_name / output_name
+            raw_target = output_raw / class_name / output_name
+            shutil.copy2(image_file, split_target)
+            shutil.copy2(image_file, raw_target)
+            stats["total"][class_name] += 1
+            stats["splits"][split][class_name] += 1
+    return stats, output_root
 
 
 def main():
@@ -80,9 +95,9 @@ def main():
     if not source_dir.exists():
         raise RuntimeError(f"源目录不存在: {source_dir}")
 
-    stats, output_raw = convert_dataset(source_dir, output_dir)
+    stats, output_base = convert_dataset(source_dir, output_dir)
     print("转换完成")
-    print(f"输出目录: {output_raw}")
+    print(f"输出目录: {output_base}")
     print(f"样本统计: {stats}")
 
 
